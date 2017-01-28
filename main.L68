@@ -1,0 +1,2118 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.15.04
+Created On: 1/7/2017 1:36:31 PM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Title      :
+00000000                             3  * Written by : Justin Moser
+00000000                             4  * Date       :
+00000000                             5  * Description: Assembly Game
+00000000                             6  *-----------------------------------------------------------
+00000000                             7      
+00000000                             8  ; handles the core game loop
+00000000                             9      
+00001000                            10  Start   ORG    $1000
+00001000                            11  
+00001000  4EB9 000017D4             12          jsr     LoadImages                  ; load all of our images ahead of time
+00001006                            13          
+00001006  4EB9 00001768             14          jsr     HandleBeginConfirmation
+0000100C  41F9 0007D7A2             15          lea     didQuitFlag, a0
+00001012  4280                      16          clr.l   d0
+00001014  1010                      17          move.b  (a0), d0
+00001016  6600 004E                 18          bne     QuitGame                    ; if the quit flag is non-zero, quit the game
+0000101A                            19  
+0000101A                            20          BeforeInitGame:
+0000101A  4EB9 00001526             21          jsr     InitGame                    ; else, initialize all game-related things and start
+00001020                            22  
+00001020                            23          GameLoop:
+00001020                            24          
+00001020  4EB9 00001074             25          jsr     UpdateDeltaTime             ; update time-keeping
+00001026  4EB9 000018AC             26          jsr     RefreshScreen               ; refresh screen from last loop's changes
+0000102C                            27  
+0000102C                            28          ; check lose flag
+0000102C  41F9 0007D7A0             29          lea     didLoseFlag, a0
+00001032  4280                      30          clr.l   d0
+00001034  1010                      31          move.b  (a0), d0
+00001036  6600 001C                 32          bne     AfterGameLoop               ; if the lose flag is non-zero, break out of game loop
+0000103A                            33          
+0000103A                            34          ; update our game objects
+0000103A  4EB9 0000145E             35          jsr     AttemptSpawnGameObj
+00001040  4EB9 000012DA             36          jsr     UpdatePlayerObj
+00001046  4EB9 0000136C             37          jsr     UpdateCurrentGameObj
+0000104C  4EB9 000010F2             38          jsr     UpdateAnimationFrameNumber
+00001052                            39          
+00001052  60CC                      40          bra     GameLoop
+00001054                            41          
+00001054                            42          AfterGameLoop:
+00001054                            43          
+00001054                            44          ; handle retry confirmation
+00001054  4EB9 000016F6             45          jsr     HandleRetryConfirmation
+0000105A  41F9 0007D7A1             46          lea     willRetryFlag, a0
+00001060  4280                      47          clr.l   d0
+00001062  1010                      48          move.b  (a0), d0
+00001064  66B4                      49          bne     BeforeInitGame              ; if the retry flag is non-zero, restart game
+00001066                            50          
+00001066                            51          QuitGame:
+00001066                            52          
+00001066  4EB9 000019F2             53          jsr     ClearScreen
+0000106C                            54  
+0000106C  203C 00000009             55          move.l  #HALT_SIM, d0
+00001072  4E4F                      56          TRAP    #15     
+00001074                            57  
+00001074                            58  ; =======================================================================================
+00001074                            59          
+00001074                            60          ; .x68 secondary file includes
+00001074                            61          INCLUDE code/util/EquDefinitions.x68    ; utility -- equ defines, time keeping, rng
+00001074                            62  
+00001074                            63  ; file to define EQU's so everything is in one place
+00001074                            64  
+00001074                            65  
+00001074                            66  ; =======================================================================================
+00001074                            67  ; === TRAP CODES === ;
+00001074                            68  ;           values of trap-codes and their helper values
+00001074                            69  
+00001074  =00000008                 70  GET_TIME                EQU     8
+00001074  =00000009                 71  HALT_SIM                EQU     9
+00001074  =00000013                 72  GET_USER_INPUT          EQU     19
+00001074  =00000017                 73  WAIT                    EQU     23
+00001074  =00000021                 74  SET_WINDOW_MODE         EQU     33
+00001074  =00000049                 75  PLAY_AUDIO              EQU     73
+00001074  =00000050                 76  SET_PEN_COLOR           EQU     80
+00001074  =00000051                 77  SET_FILL_COLOR          EQU     81
+00001074  =00000052                 78  DRAW_PIXEL              EQU     82
+00001074  =00000054                 79  DRAW_LINE               EQU     84
+00001074  =00000057                 80  DRAW_FILLED_RECT        EQU     87
+00001074  =0000005C                 81  SET_DRAW_MODE           EQU     92
+00001074  =0000005E                 82  REPAINT_SCREEN          EQU     94
+00001074                            83  
+00001074  =00000010                 84  SINGLE_BUFFER_MODE      EQU     16
+00001074  =00000011                 85  DOUBLE_BUFFER_MODE      EQU     17      ; double buffer code for trap-code 92
+00001074                            86  
+00001074  =00000002                 87  FRAME_DURATION          EQU     2       ; used to calculate the wait time for trap-code 23
+00001074                            88  
+00001074  =00000002                 89  FULLSCREEN_MODE         EQU     2       ; sets the window to fullscreen mode
+00001074                            90  
+00001074  =00000020                 91  KEY_SPACE               EQU     $20     ; key-codes for user input
+00001074  =00000025                 92  KEY_ARROW_L             EQU     $25     
+00001074  =00000027                 93  KEY_ARROW_R             EQU     $27
+00001074  =0000004E                 94  KEY_N                   EQU     $4E
+00001074  =00000051                 95  KEY_Q                   EQU     $51
+00001074  =00000059                 96  KEY_Y                   EQU     $59
+00001074                            97  
+00001074                            98  
+00001074                            99  ; =======================================================================================
+00001074                           100  ; === PARSE BITMAPS === ;
+00001074                           101  ;           byte offsets from bitmap file start to important values in the header
+00001074                           102  
+00001074  =0000000A                103  BMP_HEADER_END          EQU     10
+00001074  =0000000E                104  BMP_HEADER_SIZE         EQU     14
+00001074  =00000004                105  FROM_HEADER_TO_W        EQU     4
+00001074  =00000008                106  FROM_HEADER_TO_H        EQU     8
+00001074                           107  
+00001074                           108  
+00001074                           109  ; =======================================================================================
+00001074                           110  ; === DRAW BITMAPS === ;
+00001074                           111  ;           offsets into the stack at which arguments for our chunk-drawing subroutines are kept
+00001074                           112  
+00001074                           113  ; constant values used for DrawBackgroundChunk and DrawGameObjChunk
+00001074  =00000010                114  DRAW_CHUNK_STACK_SIZE   EQU     16          ; size of the parameters passed into DrawChunk
+00001074  =00000014                115  OBJECT_BLOCK            EQU     20          ; offset into the stack at which the game object is kept
+00001074                           116  
+00001074                           117  ; offsets into the stack at which values are kept for DrawChunk (4 and up to account for DrawChunk's return address)
+00001074  =00000004                118  DRAW_SCREEN_X           EQU     4           ; screen pixel coordinates
+00001074  =00000006                119  DRAW_SCREEN_Y           EQU     6
+00001074  =00000008                120  DRAW_CHUNK_W            EQU     8           ; chunk dimensions
+00001074  =0000000A                121  DRAW_CHUNK_H            EQU     10
+00001074  =0000000C                122  DRAW_CHUNK_X            EQU     12          ; chunk pixel coordinates
+00001074  =0000000E                123  DRAW_CHUNK_Y            EQU     14
+00001074  =00000010                124  DRAW_HEADER_DATA        EQU     16          ; address of object's image header block
+00001074                           125  
+00001074                           126  
+00001074                           127  ; =======================================================================================
+00001074                           128  ; === OBJECT DEFINITIONS === ;
+00001074                           129  ;           defines blocks of data that we can treat like objects
+00001074                           130  ;               this way, we can pass a block's start address and know how far to look ahead for a value we want
+00001074                           131  ;               instead of moving everything onto the stack
+00001074                           132  
+00001074                           133  ; stores addresses and data parsed from a bitmap header
+00001074  =00000000                134  IMG_START               EQU     0       ;       start address of image
+00001074  =00000004                135  PIXEL_ARRAY             EQU     4       ;       start address of pixel array
+00001074  =00000008                136  COLOR_TABLE             EQU     8       ;       start address of color table
+00001074  =0000000C                137  IMG_W                   EQU     12      ;       image pixel dimensions
+00001074  =0000000E                138  IMG_H                   EQU     14
+00001074  =00000010                139  PADDING                 EQU     16      ;       number of padding bytes per row
+00001074                           140  
+00001074  =00000009                141  HEADER_SIZE_W           EQU     9
+00001074                           142  
+00001074                           143  ; stores data about a game object (current animation frame, screen position, speed)
+00001074  =00000000                144  IMG_HEADER_DATA         EQU     0       ;       address of the bitmap header block for this object's sprite
+00001074  =00000004                145  CURR_SCREEN_X           EQU     4       ;       current screen position     ; FIXED POINT
+00001074  =00000008                146  CURR_SCREEN_Y           EQU     8                                           ; FIXED POINT
+00001074  =0000000C                147  PREV_SCREEN_X           EQU     12      ;       prevous screen position     ; FIXED POINT
+00001074  =00000010                148  PREV_SCREEN_Y           EQU     16                                          ; FIXED POINT
+00001074  =00000014                149  SPEED_X                 EQU     20      ;       speed                       ; FIXED POINT
+00001074  =00000018                150  SPEED_Y                 EQU     24                                          ; FIXED POINT
+00001074  =0000001C                151  CHUNK_W                 EQU     28      ;       current chunk dimensions
+00001074  =0000001E                152  CHUNK_H                 EQU     30
+00001074  =00000020                153  CHUNK_FRAME             EQU     32      ;       current frame of animation
+00001074                           154  
+00001074  =00000011                155  GAME_OBJ_SIZE_W         EQU     17
+00001074                           156  
+00001074                           157  
+00001074                           158  ; =======================================================================================
+00001074                           159  ; === UTILITY === ;
+00001074                           160  ;           values used for utility
+00001074                           161  
+00001074  =00000008                162  FRACTIONAL_BIT_COUNT    EQU     8       ; the number of fractional bits used in fixed point numbers
+00001074                           163  
+00001074                           164  
+00001074                           165  ; =======================================================================================
+00001074                           166  ; === GAMEPLAY === ;
+00001074                           167  ;           values used to control gameplay
+00001074                           168  
+00001074                           169  ; misc values
+00001074  =028001E0                170  BG_DIMENSIONS           EQU     $028001E0                       ; hex for 640 x 480 stored in 2 adjacent words
+00001074                           171  
+00001074  =00000003                172  NUM_GAME_OBJS_IN_ARRAY  EQU     3                               ; size of the array of game objects
+00001074  =0000010E                173  FRAMES_UNTIL_OBJ_SPAWN  EQU     270                             ; frames that must pass before we attempt to spawn a game obj
+00001074                           174  
+00001074  =0000000A                175  POINTS_UNTIL_ONE_UP     EQU     10                              ; points needed until a life is added
+00001074                           176  
+00001074  =00000005                177  NUM_FRAMES_IN_ANIM      EQU     5                               ; number of frames in an animation (this number + 1)
+00001074  =00000005                178  FRAMES_UNTIL_ANIM       EQU     5                               ; frames that must pass before we change the animation frame of objects
+00001074                           179  
+00001074  =00000050                180  GRAVITY                 EQU     $0<<FRACTIONAL_BIT_COUNT+$50    ; acceleration rate of gravity, fixed point
+00001074                           181  
+00001074  =0000000A                182  WALK_AUDIO_FRAME_DELAY  EQU     10                              ; number of frames that must pass before walking audio begins playing again
+00001074                           183  
+00001074                           184  ; gameplay bounds
+00001074  =00002800                185  BOUND_L                 EQU     $28<<FRACTIONAL_BIT_COUNT
+00001074  =00024300                186  BOUND_R                 EQU     $243<<FRACTIONAL_BIT_COUNT
+00001074  =0001BC00                187  BOUND_B                 EQU     $1BC<<FRACTIONAL_BIT_COUNT
+00001074                           188  
+00001074                           189  ; default player values
+00001074  =00000028                190  PLAYER_CHUNK_W          EQU     40                              ; chunk dimensions
+00001074  =00000028                191  PLAYER_CHUNK_H          EQU     40
+00001074  =00014000                192  PLAYER_START_X          EQU     $140<<FRACTIONAL_BIT_COUNT      ; start position   fixed point
+00001074  =00019400                193  PLAYER_START_Y          EQU     BOUND_B-PLAYER_CHUNK_H<<FRACTIONAL_BIT_COUNT
+00001074  =00000700                194  PLAYER_SPEED            EQU     $7<<FRACTIONAL_BIT_COUNT        ; speed             5, fixed point
+00001074                           195  
+00001074  =00000003                196  STARTING_LIVES          EQU     3
+00001074                           197  
+00001074                           198  ; default game object values
+00001074  =00002000                199  OBJ_START_X             EQU     $20<<FRACTIONAL_BIT_COUNT       ; start position    fixed point
+00001074  =00008000                200  OBJ_START_Y             EQU     $80<<FRACTIONAL_BIT_COUNT
+00001074  =00000000                201  OBJ_START_SPEED_Y       EQU     $00<<FRACTIONAL_BIT_COUNT       ; initial y speed   xx, fixed point
+00001074  =00000028                202  OBJ_CHUNK_W             EQU     40                              ; chunk dimensions
+00001074  =00000028                203  OBJ_CHUNK_H             EQU     40
+00001074                           204  
+00001074                           205  
+00001074                           206  ; =======================================================================================
+00001074                           207  ; === UI === ;
+00001074                           208  ;           values for our UI elements
+00001074                           209  
+00001074                           210  ; values for score chunk region
+00001074  =00000000                211  SCORE_START_X           EQU     $0<<FRACTIONAL_BIT_COUNT
+00001074  =00000000                212  SCORE_START_Y           EQU     $0<<FRACTIONAL_BIT_COUNT
+00001074  =00000046                213  SCORE_CHUNK_W           EQU     70
+00001074  =0000003C                214  SCORE_CHUNK_H           EQU     60
+00001074                           215  
+00001074                           216  ; values for lives chunk region
+00001074  =00023A00                217  LIVES_START_X           EQU     $23A<<FRACTIONAL_BIT_COUNT
+00001074  =00000000                218  LIVES_START_Y           EQU     $0<<FRACTIONAL_BIT_COUNT
+00001074  =00000046                219  LIVES_CHUNK_W           EQU     70
+00001074  =0000003C                220  LIVES_CHUNK_H           EQU     60
+00001074                           221  
+00001074                           222  ; values for ui dialogs
+00001074  =0000A000                223  DIALOG_START_X          EQU     $A0<<FRACTIONAL_BIT_COUNT
+00001074  =00007800                224  DIALOG_START_Y          EQU     $78<<FRACTIONAL_BIT_COUNT
+00001074  =00000140                225  DIALOG_CHUNK_W          EQU     320
+00001074  =000000F0                226  DIALOG_CHUNK_H          EQU     240
+00001074                           227  
+00001074                           228  
+00001074                           229  ; =======================================================================================
+00001074                           230  ; === LED DRAWING === ;
+00001074                           231  ;           offsets into the stack at which arguments for our LED subroutines are kept
+00001074                           232  
+00001074  =00000002                233  NUM_DIGITS              EQU     2       ; number of digits in our leds
+00001074                           234  
+00001074                           235  ; updateSegmentLED stack offsets
+00001074  =00000004                236  UPDATE_LED_VALUE        EQU     4       ; the value we are updating
+00001074                           237  
+00001074                           238  ; drawDigit stack offsets
+00001074  =00000006                239  DRAW_DIGIT_DIGIT        EQU     6       ; current digit (***ONLY USE BOTTOM WORD***)
+00001074  =00000008                240  DRAW_DIGIT_ORIGIN       EQU     8       ; upper left x,y of the 7segment for this digit (kept as a longword)
+00001074                           241  
+00001074                           242  ; drawSegment stack offsets
+00001074  =00000008                243  DRAW_SEG_COUNTER        EQU     8       ; counter (how far we need to look into the segmentPositions table)
+00001074  =0000000C                244  DRAW_SEG_POSITIONS      EQU     12      ; address of the segmentPositions table
+00001074  =00000018                245  DRAW_SEG_OFFSET_DIG_X   EQU     24      ; offsets from the chunk region to the current digit
+00001074  =0000001A                246  DRAW_SEG_OFFSET_DIG_Y   EQU     26
+00001074  =0000002C                247  DRAW_SEG_OFFSET_CHUNK   EQU     44      ; offsets from the screen to the current chunk
+00001074                           248  
+00001074                           249  ; offsets for the segmentPositions table
+00001074  =00000000                250  SEG_POS_START_X         EQU     0       ; start x,y
+00001074  =00000002                251  SEG_POS_START_Y         EQU     2
+00001074  =00000004                252  SEG_POS_END_X           EQU     4       ; end x,y
+00001074  =00000006                253  SEG_POS_END_Y           EQU     6
+00001074                           254  
+00001074                           255  
+00001074                           256  ; =======================================================================================
+00001074                           257  
+00001074                           258  
+00001074                           259  
+00001074                           260  
+00001074                           261  
+00001074                           262  
+00001074                           263  
+00001074                           264  
+00001074                           265  
+00001074                           266  
+00001074                           267  
+00001074                           268  
+00001074                           269  
+00001074                           270  
+00001074                           271  
+00001074                           272  
+00001074                           273  
+00001074                           274  
+00001074                           275  
+00001074                           276  
+00001074                           277  
+00001074                           278  
+00001074                           279  
+00001074                           280  
+00001074                           281  
+00001074                           282  
+00001074                           283  
+00001074                           284  
+00001074                           285  
+00001074                           286  
+00001074                           287  
+00001074                           288  
+00001074                           289  
+00001074                           290  -------------------- end include --------------------
+00001074                           291          INCLUDE code/util/UtilSubroutines.x68
+00001074                           292  
+00001074                           293  ; general utility functions -- time keeping, rng, score, misc
+00001074                           294  
+00001074                           295  ; =======================================================================================
+00001074                           296  
+00001074                           297  ; updates delta time on the stack and makes the game loop wait if needed
+00001074                           298  UpdateDeltaTime:
+00001074                           299  
+00001074                           300          ; get current frame start time
+00001074  7008                     301          move.l  #GET_TIME, d0
+00001076  4E4F                     302          TRAP    #15
+00001078                           303           
+00001078                           304          ; get delta time between this and previous, overwrite previous frame start time with current
+00001078  2401                     305          move.l  d1, d2
+0000107A  94B9 0007D672            306          sub.l   prevFrameStartTime, d2
+00001080  23C2 0007D66E            307          move.l  d2, deltaTime
+00001086  23C1 0007D672            308          move.l  d1, prevFrameStartTime
+0000108C                           309          
+0000108C                           310          ; check to see if we have to delay the game loop to keep our framerate
+0000108C  7202                     311          move.l  #FRAME_DURATION, d1
+0000108E  9282                     312          sub.l   d2, d1
+00001090  6F00 0010                313          ble     SkipWait                        ; compare delta time with frame duration, skip wait if delta was greater
+00001094  7017                     314          move.l  #WAIT, d0                       
+00001096  4E4F                     315          TRAP    #15                             ; else delay for d1 1/100s seconds
+00001098                           316          
+00001098  7008                     317          move.l  #GET_TIME, d0                   ; if we waited, we need to update the previous frame start
+0000109A  4E4F                     318          TRAP    #15
+0000109C  23C1 0007D672            319          move.l  d1, prevFrameStartTime
+000010A2                           320          
+000010A2                           321          SkipWait:
+000010A2                           322  
+000010A2  4E75                     323          rts
+000010A4                           324          
+000010A4                           325  ; =======================================================================================
+000010A4                           326  
+000010A4                           327  ; seeds the rng on initialization
+000010A4                           328  seedRNG:
+000010A4                           329                        
+000010A4  103C 0008                330          move.b  #GET_TIME, d0               ; seed the rng with the current time
+000010A8  4E4F                     331          TRAP    #15
+000010AA  23C1 0007D792            332          move.l  d1, randomNumber
+000010B0                           333  
+000010B0  4E75                     334          rts
+000010B2                           335          
+000010B2                           336  ; =======================================================================================
+000010B2                           337      
+000010B2                           338  ; creates a random number based on a seed value (random number becomes seed for the next call)
+000010B2                           339  getRandomNumber:
+000010B2                           340  
+000010B2  2039 0007D792            341          move.l  randomNumber, d0            ; get the random seed
+000010B8                           342          
+000010B8  72AF                     343          moveq   #$AF-$100, d1               ; some values for the random generation
+000010BA  740C                     344          moveq   #12, d2
+000010BC                           345          
+000010BC                           346          getRandomNumber_1:
+000010BC  D080                     347          add.l   d0, d0
+000010BE  6400 0006                348          bcc     getRandomNumber_2
+000010C2  B380                     349          eor.l   d1, d0
+000010C4  4840                     350          swap    d0
+000010C6                           351          
+000010C6                           352          getRandomNumber_2:
+000010C6  51CA FFF4                353          dbf d2, getRandomNumber_1
+000010CA                           354      
+000010CA  23C0 0007D792            355          move.l  d0, randomNumber            ; save the random long we made for the next seed
+000010D0                           356  
+000010D0  4E75                     357          rts
+000010D2                           358  
+000010D2                           359  ; =======================================================================================
+000010D2                           360  
+000010D2                           361  ; creates a random speed value (fixed point) for our game objecs
+000010D2                           362  ;       returns the value to d7
+000010D2                           363  getRandomSpeed:
+000010D2                           364  
+000010D2                           365          ; create a random number with which we can work
+000010D2  4EB8 10B2                366          jsr     getRandomNumber
+000010D6                           367          
+000010D6                           368          ; work the random number into something usable as a game object speed
+000010D6  4287                     369          clr.l   d7
+000010D8  2E39 0007D792            370          move.l  (randomNumber), d7          ; getRandomNumber may create a random longword
+000010DE  0287 00000007            371          andi.l  #$00000007, d7              ;       but all we care about for the speed is the lower 3 bits
+000010E4                           372          
+000010E4  5287                     373          addi.l  #$1, d7                     ; add 1 to the speed so it can never be 0
+000010E6  E18F                     374          lsl.l   #FRACTIONAL_BIT_COUNT, d7   ; convert this to fixed point
+000010E8                           375  
+000010E8  4E75                     376          rts
+000010EA                           377  
+000010EA                           378  ; =======================================================================================
+000010EA                           379  
+000010EA                           380  ; swaps the bytes in d0
+000010EA                           381  ByteSwap:
+000010EA                           382  
+000010EA  E158                     383          rol.w   #8, d0
+000010EC  4840                     384          swap    d0
+000010EE  E158                     385          rol.w   #8, d0
+000010F0                           386  
+000010F0  4E75                     387          rts
+000010F2                           388          
+000010F2                           389  ; =======================================================================================
+000010F2                           390  
+000010F2                           391  ; updates the number of the current animation frame
+000010F2                           392  UpdateAnimationFrameNumber:
+000010F2                           393  
+000010F2                           394          ; count down frames remaining until we change the animation frame
+000010F2  5379 0007D79A            395          subi.w  #1, (framesUntilAnimChange)
+000010F8  6600 0046                396          bne     SkipAnimFrameChange
+000010FC                           397          
+000010FC  33FC 0005 0007D79A       398          move.w  #FRAMES_UNTIL_ANIM, (framesUntilAnimChange)     ; reset the countdown
+00001104                           399          
+00001104                           400          ; if countdown is done, update the current animation frame number
+00001104  3039 0007D79C            401          move.w  (currentAnimFrame), d0
+0000110A  5340                     402          subi.w  #1, d0                          ; if the current animation frame is 0 or greater...
+0000110C  6C00 0006                403          bge     SkipResetAnimFrameNumber        ;       reset it to the default value
+00001110                           404          
+00001110  303C 0005                405          move.w  #NUM_FRAMES_IN_ANIM, d0
+00001114                           406          
+00001114                           407          SkipResetAnimFrameNumber:
+00001114                           408          
+00001114                           409          ; give current animation frame to player
+00001114  41F9 0007D6FE            410          lea     player, a0
+0000111A  3140 0020                411          move.w  d0, CHUNK_FRAME(a0)
+0000111E                           412          
+0000111E                           413          ; give current animation frame to each game object
+0000111E  41F9 0007D720            414          lea     gameObjArray, a0
+00001124  7E02                     415          move.l  #NUM_GAME_OBJS_IN_ARRAY-1, d7
+00001126                           416   
+00001126                           417          GiveAnimFrameToObjsLoop:
+00001126  2210                     418          move.l  (a0), d1
+00001128  6700 0006                419          beq     SkipGiveAnimFrameToThisObj          ; skip if object is null
+0000112C  3140 0020                420          move.w  d0, CHUNK_FRAME(a0)                 ; else, give current animation frame to object
+00001130                           421          
+00001130                           422          SkipGiveAnimFrameToThisObj:
+00001130  D1FC 00000022            423          adda.l  #GAME_OBJ_SIZE_W*2, a0              ; move on to the next element
+00001136  51CF FFEE                424          dbra    d7, GiveAnimFrameToObjsLoop
+0000113A                           425  
+0000113A                           426          ; save the new current animation frame
+0000113A  33C0 0007D79C            427          move.w  d0, (currentAnimFrame)
+00001140                           428          
+00001140                           429          SkipAnimFrameChange:
+00001140                           430  
+00001140  4E75                     431          rts
+00001142                           432  
+00001142                           433  ; =======================================================================================
+00001142                           434  
+00001142                           435  ; sets lose game flag for main function and handles lose game events
+00001142                           436  HandleLose:
+00001142                           437          
+00001142                           438           ; play lose game audio
+00001142  43F9 0007D8A3            439          lea     loseGameAudio, a1
+00001148  7049                     440          move.l  #PLAY_AUDIO, d0
+0000114A  4E4F                     441          TRAP    #15
+0000114C                           442  
+0000114C                           443          ; set lose flag and draw dialog
+0000114C  13FC 00FF 0007D7A0       444          move.b  #$FF, didLoseFlag
+00001154                           445          
+00001154  41F9 0007D6BA            446          lea     retryDialog, a0
+0000115A  2F08                     447          move.l  a0, -(sp)
+0000115C  4EB9 0000192A            448          jsr     DrawGameObjChunk
+00001162  205F                     449          move.l  (sp)+, a0
+00001164                           450  
+00001164  4E75                     451          rts
+00001166                           452          
+00001166                           453  ; =======================================================================================
+00001166                           454  
+00001166                           455  ; decrements lives count and updates the LED
+00001166                           456  DecrementLives:
+00001166                           457  
+00001166                           458          ; play audio
+00001166  43F9 0007D889            459          lea     loseLifeAudio, a1
+0000116C  7049                     460          move.l  #PLAY_AUDIO, d0
+0000116E  4E4F                     461          TRAP    #15
+00001170                           462  
+00001170                           463          ; redraw the background chunk over the lives area
+00001170  41F9 0007D698            464          lea     livesChunkRegion, a0
+00001176  2F08                     465          move.l  a0, -(sp)
+00001178  4EB9 000018E6            466          jsr     DrawBackgroundChunk
+0000117E                           467          
+0000117E                           468          ; handle lives change
+0000117E  53B9 0007D78E            469          subi.l  #1, (lives)
+00001184  6600 0006                470          bne     SkipSetLose
+00001188                           471          
+00001188  4EB8 1142                472          jsr     HandleLose
+0000118C                           473          
+0000118C                           474          SkipSetLose:
+0000118C                           475          
+0000118C  2F39 0007D78E            476          move.l  (lives), -(sp)
+00001192  4EB9 00001214            477          jsr     updateSegmentLED
+00001198                           478          
+00001198  201F                     479          move.l  (sp)+, d0
+0000119A  205F                     480          move.l  (sp)+, a0           ; restore stack for return
+0000119C                           481  
+0000119C  4E75                     482          rts
+0000119E                           483          
+0000119E                           484  ; =======================================================================================
+0000119E                           485  
+0000119E                           486  ; increments the lives count and updates the LED
+0000119E                           487  IncrementLives:
+0000119E                           488  
+0000119E                           489          ; play audio
+0000119E  43F9 0007D86E            490          lea     oneUpAudio, a1
+000011A4  7049                     491          move.l  #PLAY_AUDIO, d0
+000011A6  4E4F                     492          TRAP    #15
+000011A8                           493  
+000011A8                           494          ; redraw the background chunk over the lives area
+000011A8  41F9 0007D698            495          lea     livesChunkRegion, a0
+000011AE  2F08                     496          move.l  a0, -(sp)
+000011B0  4EB9 000018E6            497          jsr     DrawBackgroundChunk
+000011B6                           498          
+000011B6                           499          ; handle lives change
+000011B6  52B9 0007D78E            500          addi.l  #1, (lives)
+000011BC                           501          
+000011BC  2F39 0007D78E            502          move.l  (lives), -(sp)
+000011C2  4EB9 00001214            503          jsr     updateSegmentLED
+000011C8                           504          
+000011C8  201F                     505          move.l  (sp)+, d0
+000011CA  205F                     506          move.l  (sp)+, a0
+000011CC                           507          
+000011CC  4E75                     508          rts
+000011CE                           509  
+000011CE                           510  ; =======================================================================================
+000011CE                           511  
+000011CE                           512  ; updates and draws the new score to the screen as a 7-segment display
+000011CE                           513  IncrementScore:
+000011CE                           514   
+000011CE                           515          ; play audio
+000011CE  43F9 0007D857            516          lea     pointAudio, a1
+000011D4  7049                     517          move.l  #PLAY_AUDIO, d0
+000011D6  4E4F                     518          TRAP    #15
+000011D8                           519   
+000011D8                           520          ; redraw background chunk over the score area
+000011D8  41F9 0007D676            521          lea     scoreChunkRegion, a0
+000011DE  2F08                     522          move.l  a0, -(sp)
+000011E0  4EB9 000018E6            523          jsr     DrawBackgroundChunk  
+000011E6                           524          
+000011E6                           525          ; handle score change
+000011E6  52B9 0007D78A            526          addi.l  #1, (score)
+000011EC                           527          
+000011EC  2F39 0007D78A            528          move.l  (score), -(sp)
+000011F2  4EB9 00001214            529          jsr     updateSegmentLED
+000011F8                           530          
+000011F8  201F                     531          move.l  (sp)+, d0 
+000011FA  205F                     532          move.l  (sp)+, a0           ; restore stack
+000011FC                           533          
+000011FC                           534          ; decrease the points counter that tracks when we get a 1up
+000011FC  5379 0007D79E            535          subi.w  #1, (pointsUntilOneUp)
+00001202  6600 000E                536          bne     SkipOneUp
+00001206                           537          
+00001206  33FC 000A 0007D79E       538          move.w  #POINTS_UNTIL_ONE_UP, (pointsUntilOneUp)
+0000120E  4EB8 119E                539          jsr     IncrementLives
+00001212                           540          
+00001212                           541          SkipOneUp:
+00001212                           542          
+00001212  4E75                     543          rts
+00001214                           544          
+00001214                           545  ; =======================================================================================
+00001214                           546     
+00001214                           547  ; updates and draws the 7segment LED passed in on the stack     
+00001214                           548  updateSegmentLED:
+00001214                           549          
+00001214  202F 0004                550          move.l  UPDATE_LED_VALUE(sp), d0    ; retrieve the value we are drawing from the stack
+00001218                           551          
+00001218                           552          ; iterate through each digit we must draw
+00001218  41F9 00001A2C            553          lea     digitStartPositions, a0
+0000121E  7E02                     554          move.l  #NUM_DIGITS, d7 
+00001220                           555          
+00001220                           556          updateSegmentLEDLoop:
+00001220  2F08                     557          move.l  a0, -(sp)                   ; save the values we need to keep (table address and counter)
+00001222  2F07                     558          move.l  d7, -(sp)
+00001224                           559          
+00001224  80FC 000A                560          divu    #10, d0                     ; divide value by 10 to separate the least significant digit (remainder) from the quotient
+00001228  4840                     561          swap    d0                          ;       swap words, d0's bottom word now contains least significant digit of remaining value
+0000122A                           562          
+0000122A                           563          ; prepare and restore stack for drawDigit call
+0000122A  2F10                     564          move.l  (a0), -(sp)                 ; move the current digit origin point onto the stack
+0000122C  2F00                     565          move.l  d0, -(sp)                   ; move current digit (in bottom word) onto the stack
+0000122E  4EB9 00001248            566          jsr     drawDigit
+00001234  201F                     567          move.l  (sp)+, d0
+00001236  2E1F                     568          move.l  (sp)+, d7
+00001238                           569          
+00001238  E088                     570          lsr.l   #8, d0                      ; shift out bottom word from d0
+0000123A  E088                     571          lsr.l   #8, d0                      ;       d0 now contains the quotient from the last divu call
+0000123C                           572          
+0000123C  2E1F                     573          move.l  (sp)+, d7                   ; get our saved values off of the stack
+0000123E  205F                     574          move.l  (sp)+, a0
+00001240                           575          
+00001240  5888                     576          adda.l  #4, a0                      ; go to the next digit origin definition
+00001242  5387                     577          subi.l  #1, d7                      ; decrement the number of remaining digits
+00001244  66DA                     578          bne     updateSegmentLEDLoop
+00001246                           579          
+00001246  4E75                     580          rts
+00001248                           581          
+00001248                           582  ; =======================================================================================
+00001248                           583  
+00001248                           584  drawDigit:
+00001248                           585  
+00001248  302F 0006                586          move.w  DRAW_DIGIT_DIGIT(sp), d0    ; d0 = current digit
+0000124C                           587          
+0000124C                           588          ; load the segment mask for the current digit from its lookup table
+0000124C  41F9 00001A34            589          lea     digitSegmentMasks, a0
+00001252  43F9 00001A3E            590          lea     segmentPositions, a1
+00001258  2F09                     591          move.l  a1, -(sp)
+0000125A                           592          
+0000125A  4281                     593          clr.l   d1
+0000125C  1230 0000                594          move.b  (a0, d0), d1                ; d1 = segment mask
+00001260                           595          
+00001260                           596          ; initialize our current segment counter
+00001260  7E06                     597          move.l  #6, d7                      ; d7 = counter
+00001262                           598          handleSegmentsLoop:
+00001262                           599          
+00001262                           600          ; get the last bit out of the mask
+00001262  1401                     601          move.b  d1, d2                      ; d2 used as temp place to do the mask logic
+00001264  0202 0001                602          andi.b  #1, d2
+00001268  6700 0010                603          beq     SkipDrawSegment             ; draw current segment if it is 1, else skip it
+0000126C                           604          
+0000126C                           605          ; draw the current segment
+0000126C  2F07                     606          move.l  d7, -(sp)
+0000126E  2F01                     607          move.l  d1, -(sp)                   ; we need to save the mask for when we return
+00001270  4EB9 00001284            608          jsr     drawSegment
+00001276  221F                     609          move.l  (sp)+, d1
+00001278  2E1F                     610          move.l  (sp)+, d7
+0000127A                           611          
+0000127A                           612          SkipDrawSegment:
+0000127A  E209                     613          lsr.b   #1, d1                      ; shift out the mask bit we just handled
+0000127C  51CF FFE4                614          dbra    d7, handleSegmentsLoop      ; decrement our counter
+00001280                           615          
+00001280  225F                     616          move.l  (sp)+, a1                   ; restore the stack before we return
+00001282                           617  
+00001282  4E75                     618          rts
+00001284                           619  
+00001284                           620  ; =======================================================================================
+00001284                           621  
+00001284                           622  drawSegment:
+00001284                           623  
+00001284                           624          ; set color for line draw
+00001284  7050                     625          move.l  #SET_PEN_COLOR, d0
+00001286  223C 0000FF00            626          move.l  #$0000FF00, d1
+0000128C  4E4F                     627          TRAP    #15
+0000128E                           628  
+0000128E                           629          ; get the address of the current segment's table entry
+0000128E  206F 000C                630          move.l  DRAW_SEG_POSITIONS(sp), a0
+00001292  2E2F 0008                631          move.l  DRAW_SEG_COUNTER(sp), d7    ; multiply the counter by 8 to get the offset from the table start
+00001296  CEFC 0008                632          mulu    #8, d7
+0000129A  D1C7                     633          adda.l  d7, a0
+0000129C                           634  
+0000129C                           635          ; get the offsets from the digit start from the table
+0000129C  3228 0000                636          move.w  SEG_POS_START_X(a0), d1
+000012A0  3428 0002                637          move.w  SEG_POS_START_Y(a0), d2
+000012A4  3628 0004                638          move.w  SEG_POS_END_X(a0), d3
+000012A8  3828 0006                639          move.w  SEG_POS_END_Y(a0), d4
+000012AC                           640          
+000012AC                           641          ; get the absolute positions of the line start and end (absolute position = region origin + digit offset + segment offset)
+000012AC  226F 002C                642          move.l  DRAW_SEG_OFFSET_CHUNK(sp), a1
+000012B0  2A29 000C                643          move.l  PREV_SCREEN_X(a1), d5
+000012B4  2C29 0010                644          move.l  PREV_SCREEN_Y(a1), d6
+000012B8  E08D                     645          lsr.l   #FRACTIONAL_BIT_COUNT, d5
+000012BA  E08E                     646          lsr.l   #FRACTIONAL_BIT_COUNT, d6
+000012BC                           647          
+000012BC  D245                     648          add.w   d5, d1
+000012BE  D446                     649          add.w   d6, d2
+000012C0  D645                     650          add.w   d5, d3
+000012C2  D846                     651          add.w   d6, d4
+000012C4                           652          
+000012C4  D26F 0018                653          add.w   DRAW_SEG_OFFSET_DIG_X(sp), d1
+000012C8  D46F 001A                654          add.w   DRAW_SEG_OFFSET_DIG_Y(sp), d2
+000012CC  D66F 0018                655          add.w   DRAW_SEG_OFFSET_DIG_X(sp), d3
+000012D0  D86F 001A                656          add.w   DRAW_SEG_OFFSET_DIG_Y(sp), d4
+000012D4                           657          
+000012D4                           658          ; draw the line
+000012D4  7054                     659          move.l  #DRAW_LINE, d0
+000012D6  4E4F                     660          TRAP    #15
+000012D8                           661          
+000012D8  4E75                     662          rts
+000012DA                           663  
+000012DA                           664  ; =======================================================================================
+000012DA                           665  
+000012DA                           666  
+000012DA                           667  
+000012DA                           668  
+000012DA                           669  
+000012DA                           670  
+000012DA                           671  
+000012DA                           672  
+000012DA                           673  
+000012DA                           674  
+000012DA                           675  
+000012DA                           676  
+000012DA                           677  
+000012DA                           678  
+000012DA                           679  
+000012DA                           680  
+000012DA                           681  
+000012DA                           682  
+000012DA                           683  
+000012DA                           684  
+000012DA                           685  
+000012DA                           686  
+000012DA                           687  -------------------- end include --------------------
+000012DA                           688          
+000012DA                           689          INCLUDE code/GameObjects.x68            ; game obj subroutines
+000012DA                           690  
+000012DA                           691  ; update calls and other functions for game objects
+000012DA                           692  
+000012DA                           693  ; =======================================================================================
+000012DA                           694  
+000012DA                           695  ; handles input and movement logic for the player object
+000012DA                           696  UpdatePlayerObj:
+000012DA                           697          
+000012DA  41F9 0007D6FE            698          lea     player, a0
+000012E0                           699          
+000012E0                           700          ; set trap task to listen for left and right arrow keys
+000012E0  223C 00002527            701          move.l  #KEY_ARROW_L<<8+KEY_ARROW_R, d1
+000012E6  7013                     702          move.l  #GET_USER_INPUT, d0
+000012E8  4E4F                     703          TRAP    #15
+000012EA                           704          
+000012EA                           705          ; save off previous screen position
+000012EA                           706          ;       we do this for every frame whether or not we move
+000012EA                           707          ;       because there are cases that otherwise led to a mismatch between current and previous
+000012EA  2168 0004 000C           708          move.l  CURR_SCREEN_X(a0), PREV_SCREEN_X(a0)        
+000012F0                           709          
+000012F0                           710          ; check which inputs are detected
+000012F0  0C41 FF00                711          cmpi.w  #$FF00, d1          ; only left detected
+000012F4  6700 0018                712          beq     LeftDetected
+000012F8  0C41 00FF                713          cmpi.w  #$00FF, d1          ; only right detected
+000012FC  6700 003A                714          beq     RightDetected
+00001300                           715          
+00001300                           716          ; else neither or both are detected, set idle animation and return
+00001300  43F9 0007D602            717          lea     playerHeaderIdle, a1
+00001306  2149 0000                718          move.l  a1, IMG_HEADER_DATA(a0)
+0000130A  6000 005E                719          bra     EndUpdatePlayer
+0000130E                           720          
+0000130E                           721          LeftDetected:
+0000130E                           722          
+0000130E                           723          ; set left animation
+0000130E  43F9 0007D614            724          lea     playerHeaderLeft, a1
+00001314  2149 0000                725          move.l  a1, IMG_HEADER_DATA(a0)
+00001318                           726          
+00001318                           727          ; check screen left bounds
+00001318  2028 0004                728          move.l  CURR_SCREEN_X(a0), d0
+0000131C  0C80 00002800            729          cmpi.l  #BOUND_L, d0
+00001322  6F00 0040                730          ble     PlayWalkingAudio
+00001326                           731          
+00001326                           732          ; move player left if not outside bounds
+00001326  41F9 0007D6FE            733          lea     player, a0
+0000132C  2028 0014                734          move.l  SPEED_X(a0), d0
+00001330  91A8 0004                735          sub.l   d0, CURR_SCREEN_X(a0)
+00001334  6000 002E                736          bra     PlayWalkingAudio
+00001338                           737          
+00001338                           738          RightDetected:
+00001338                           739          
+00001338                           740          ; set right animation
+00001338  43F9 0007D626            741          lea     playerHeaderRight, a1
+0000133E  2149 0000                742          move.l  a1, IMG_HEADER_DATA(a0)
+00001342                           743          
+00001342                           744          ; check screen right bounds
+00001342  2028 0004                745          move.l  CURR_SCREEN_X(a0), d0
+00001346  0680 00002800            746          addi.l  #PLAYER_CHUNK_W<<FRACTIONAL_BIT_COUNT, d0       ; have to account for fractional bits, so we shift chunk width
+0000134C  0C80 00024300            747          cmpi.l  #BOUND_R, d0
+00001352  6C00 0010                748          bge     PlayWalkingAudio
+00001356                           749          
+00001356                           750          ; move player right if not outside bounds
+00001356  41F9 0007D6FE            751          lea     player, a0
+0000135C  2028 0014                752          move.l  SPEED_X(a0), d0
+00001360  D1A8 0004                753          add.l   d0, CURR_SCREEN_X(a0)
+00001364                           754          
+00001364                           755          PlayWalkingAudio:
+00001364  4EB9 00001508            756          jsr     HandlePlayerWalkingAudio
+0000136A                           757  
+0000136A                           758          EndUpdatePlayer:
+0000136A                           759  
+0000136A  4E75                     760          rts
+0000136C                           761  
+0000136C                           762  ; =======================================================================================
+0000136C                           763     
+0000136C                           764  ; handles movment and logic for the current game object
+0000136C                           765  ;       we only update 1 object per frame to save time
+0000136C                           766  ;       it is here that we update the pointer to the currentGameObj
+0000136C                           767  UpdateCurrentGameObj:
+0000136C                           768          
+0000136C                           769          ; load the current game object
+0000136C  41F9 0007D786            770          lea     currentGameObj, a0          ; currentGameObj is a pointer to the current element in the array
+00001372  2450                     771          move.l  (a0), a2                    ; so we get the contents of a0 to load the current object's actual address
+00001374                           772          
+00001374  2012                     773          move.l  (a2), d0                    ; check object for null
+00001376  6700 00C8                774          beq     SetNextCurrentGameObj       ; skip this update if the object is null
+0000137A                           775          
+0000137A  202A 0004                776          move.l  CURR_SCREEN_X(a2), d0
+0000137E  222A 0008                777          move.l  CURR_SCREEN_Y(a2), d1
+00001382  2540 000C                778          move.l  d0, PREV_SCREEN_X(a2)       ; save last screen position
+00001386  2541 0010                779          move.l  d1, PREV_SCREEN_Y(a2)
+0000138A                           780          
+0000138A                           781          ; check collision with bottom bounds of screen
+0000138A  0681 00002800            782          addi.l  #OBJ_CHUNK_H<<FRACTIONAL_BIT_COUNT, d1
+00001390  0C81 0001BC00            783          cmpi.l  #BOUND_B, d1
+00001396  6D00 0010                784          blt     GameObjCheckRightBound
+0000139A                           785          
+0000139A  4EB8 1166                786          jsr     DecrementLives
+0000139E  4EB9 000014EE            787          jsr     DestroyGameObj                          ;       decrement lives, destroy game object,
+000013A4  6000 0098                788          bra     EndUpdateCurrentGameObj                 ;       and return
+000013A8                           789          
+000013A8                           790          ; check collision with right bounds of screen
+000013A8                           791          GameObjCheckRightBound:
+000013A8  0680 00002800            792          addi.l  #OBJ_CHUNK_W<<FRACTIONAL_BIT_COUNT, d0
+000013AE  0C80 00024300            793          cmpi.l  #BOUND_R, d0
+000013B4  6D00 001C                794          blt     GameObjCheckPlayerCollision
+000013B8                           795          
+000013B8  4EB8 11CE                796          jsr     IncrementScore
+000013BC  4EB9 000014EE            797          jsr     DestroyGameObj                          ;       increment the score, destroy game object,
+000013C2  4EB9 00001478            798          jsr     InitGameObj                             ;       create new one in its place, and set the next game object
+000013C8  4EB9 00001440            799          jsr     SetNextCurrentGameObj
+000013CE  6000 006E                800          bra     EndUpdateCurrentGameObj
+000013D2                           801          
+000013D2                           802          ; check collision with the player object
+000013D2                           803          GameObjCheckPlayerCollision:
+000013D2  47F9 0007D6FE            804          lea     player, a3
+000013D8                           805          
+000013D8  B2AB 0008                806          cmp.l   CURR_SCREEN_Y(a3), d1                       ; check y bounds of player and obj
+000013DC  6D00 0042                807          blt     NoCollisionDetected                         ;       no collision if obj is still above player
+000013E0                           808          
+000013E0  242B 0004                809          move.l  CURR_SCREEN_X(a3), d2
+000013E4  B082                     810          cmp.l   d2, d0                                      ; check obj right bound vs player left bound
+000013E6  6D00 0038                811          blt     NoCollisionDetected                         ;       no collision if obj right is still left of player left
+000013EA                           812          
+000013EA  0682 00002800            813          add.l   #PLAYER_CHUNK_W<<FRACTIONAL_BIT_COUNT, d2   ; check obj left bound vs player right bound
+000013F0  B4AA 0004                814          cmp.l   CURR_SCREEN_X(a2), d2                       ;       no collision if obj left is still right of player right
+000013F4  6D00 002A                815          blt     NoCollisionDetected 
+000013F8                           816          
+000013F8  0AAA FFFFFFFF 0018       817          eori.l  #$FFFFFFFF, SPEED_Y(a2)                     ; if a collision is detected...
+00001400  52AA 0018                818          addi.l  #1, SPEED_Y(a2)                             ;       set the object's speed to its negative equivalent (reverse bits, add 1)
+00001404                           819          
+00001404  262B 0008                820          move.l  CURR_SCREEN_Y(a3), d3       
+00001408  0483 00002800            821          subi.l  #PLAYER_CHUNK_H<<FRACTIONAL_BIT_COUNT, d3   ; we also have to set the object's y to the player's y
+0000140E  2543 0008                822          move.l  d3, CURR_SCREEN_Y(a2)                       ;       otherwise, the object could get stuck on the player object
+00001412                           823          
+00001412  43F9 0007D826            824          lea     bounceAudio, a1
+00001418  7049                     825          move.l  #PLAY_AUDIO, d0
+0000141A  4E4F                     826          TRAP    #15
+0000141C                           827          
+0000141C  6000 000A                828          bra     UpdateObjScreenPosition
+00001420                           829          
+00001420                           830          ; no collisions detected, apply gravity to object
+00001420                           831          NoCollisionDetected:
+00001420  04AA 00000050 0018       832          subi.l  #GRAVITY, SPEED_Y(a2)
+00001428                           833          
+00001428                           834          UpdateObjScreenPosition:
+00001428  222A 0018                835          move.l  SPEED_Y(a2), d1             ; update screen y
+0000142C  93AA 0008                836          sub.l   d1, CURR_SCREEN_Y(a2)
+00001430  222A 0014                837          move.l  SPEED_X(a2), d1             ; update screen x
+00001434  D3AA 0004                838          add.l   d1, CURR_SCREEN_X(a2)
+00001438                           839          
+00001438                           840          ; set the next game object pointer
+00001438  4EB9 00001440            841          jsr     SetNextCurrentGameObj
+0000143E                           842          
+0000143E                           843          EndUpdateCurrentGameObj:
+0000143E                           844          
+0000143E  4E75                     845          rts
+00001440                           846          
+00001440                           847  ; =======================================================================================
+00001440                           848          
+00001440                           849  ; sets the next current game object pointer
+00001440                           850  SetNextCurrentGameObj:
+00001440                           851  
+00001440  41F9 0007D786            852          lea     currentGameObj, a0          ; currentGameObj is a pointer to the current element in the array
+00001446  2250                     853          move.l  (a0), a1                    ; so we get the contents of a0 to load the current object's actual address
+00001448                           854  
+00001448  D3FC 00000022            855          adda.l   #GAME_OBJ_SIZE_W*2, a1
+0000144E                           856          
+0000144E  B1C9                     857          cmp.l   a1, a0                      ; if the current obj address is the currentGameObj pointer,
+00001450  6600 0008                858          bne     EndSetNextCurrentGameObj    ; we need to set the current obj address back to the array start
+00001454  43F9 0007D720            859          lea     gameObjArray, a1
+0000145A                           860          
+0000145A                           861          EndSetNextCurrentGameObj:
+0000145A  2089                     862          move.l  a1, (a0)                    ; reassign the currentGameObj to the next element
+0000145C                           863          
+0000145C  4E75                     864          rts
+0000145E                           865          
+0000145E                           866  ; =======================================================================================
+0000145E                           867  
+0000145E                           868  ; counts the frames until we may spawn an object
+0000145E                           869  ;       when the required number of frames has passed, we may attempt to spawn a new object
+0000145E                           870  AttemptSpawnGameObj:
+0000145E                           871  
+0000145E                           872          ; decrement the number of remaining frames
+0000145E  5379 0007D796            873          subi.w  #1, (framesUntilObjSpawn)
+00001464  6600 0010                874          bne     SkipAttemptSpawn            ; if the number of frames hasn't been reached, skip attempting to spawn
+00001468                           875          
+00001468  4EB9 00001478            876          jsr     InitGameObj                 ; else, we can try to spawn an object at the first null array element
+0000146E  33FC 010E 0007D796       877          move.w  #FRAMES_UNTIL_OBJ_SPAWN, (framesUntilObjSpawn)
+00001476                           878          
+00001476                           879          SkipAttemptSpawn:
+00001476                           880  
+00001476  4E75                     881          rts
+00001478                           882  
+00001478                           883  ; =======================================================================================
+00001478                           884  
+00001478                           885  ; creates a game object at the first non-null element in our game objects array
+00001478                           886  InitGameObj:
+00001478                           887  
+00001478                           888          ; step through array of game objs
+00001478  41F9 0007D720            889          lea     gameObjArray, a0
+0000147E  7E02                     890          move.l  #NUM_GAME_OBJS_IN_ARRAY-1, d7
+00001480                           891   
+00001480                           892          FindFirstNonNullArrayElement:
+00001480  2010                     893          move.l  (a0), d0
+00001482  6700 0010                894          beq     CreateObj                           ; create object at current location if element is null (0 for an image header ptr)
+00001486  D1FC 00000022            895          adda.l  #GAME_OBJ_SIZE_W*2, a0              ; else, continue to next element
+0000148C  51CF FFF2                896          dbra    d7, FindFirstNonNullArrayElement
+00001490                           897          
+00001490  6000 005A                898          bra     EndInitGameObj                      ; there were no null array elements, don't create a new object
+00001494                           899  
+00001494                           900          CreateObj:
+00001494                           901  
+00001494                           902          ; play audio
+00001494  43F9 0007D80B            903          lea     dispenseObjAudio, a1
+0000149A  7049                     904          move.l  #PLAY_AUDIO, d0
+0000149C  4E4F                     905          TRAP    #15
+0000149E                           906  
+0000149E  43F9 0007D638            907          lea     objImgHeader, a1                    ; image header
+000014A4  2149 0000                908          move.l  a1, IMG_HEADER_DATA(a0)
+000014A8                           909          
+000014A8  217C 00002000 0004       910          move.l  #OBJ_START_X, CURR_SCREEN_X(a0)     ; starting position
+000014B0  217C 00008000 0008       911          move.l  #OBJ_START_Y, CURR_SCREEN_Y(a0)
+000014B8  217C 00002000 000C       912          move.l  #OBJ_START_X, PREV_SCREEN_X(a0)
+000014C0  217C 00008000 0010       913          move.l  #OBJ_START_Y, PREV_SCREEN_Y(a0)
+000014C8                           914          
+000014C8  4EB8 10D2                915          jsr     getRandomSpeed                      ; object speed (x value is randomized)
+000014CC  2147 0014                916          move.l  d7, SPEED_X(a0)
+000014D0  217C 00000000 0018       917          move.l  #OBJ_START_SPEED_Y, SPEED_Y(a0)
+000014D8                           918          
+000014D8  317C 0028 001C           919          move.w  #OBJ_CHUNK_W, CHUNK_W(a0)           ; chunk dimensions
+000014DE  317C 0028 001E           920          move.w  #OBJ_CHUNK_H, CHUNK_H(a0)
+000014E4                           921          
+000014E4  3179 0007D79C 0020       922          move.w  (currentAnimFrame), CHUNK_FRAME(a0) ; chunk animation frame
+000014EC                           923  
+000014EC                           924          EndInitGameObj:
+000014EC                           925  
+000014EC  4E75                     926          rts
+000014EE                           927          
+000014EE                           928  ; =======================================================================================
+000014EE                           929  
+000014EE                           930  ; nulls the memory of the current game object
+000014EE                           931  DestroyGameObj:
+000014EE                           932  
+000014EE  45F9 0007D786            933          lea     currentGameObj, a2
+000014F4  2252                     934          move.l  (a2), a1
+000014F6                           935          
+000014F6                           936          ; repaint background at position so it doesn't stick there
+000014F6  2F09                     937          move.l  a1, -(sp)
+000014F8  4EB9 000018E6            938          jsr     DrawBackgroundChunk
+000014FE  225F                     939          move.l  (sp)+, a1
+00001500                           940  
+00001500                           941          ; then destroy the currentGameObj
+00001500  22BC 00000000            942          move.l  #0, (a1)                        ; 0 out image header at the address
+00001506                           943          
+00001506  4E75                     944          rts  
+00001508                           945         
+00001508                           946  ; =======================================================================================
+00001508                           947  
+00001508                           948  ; handles slight delay for playing player walking audio
+00001508                           949  HandlePlayerWalkingAudio:
+00001508                           950          
+00001508  5379 0007D798            951          subi.w  #1, (framesUntilWalkingAudio)
+0000150E  6600 0014                952          bne     SkipWalkingAudio
+00001512                           953          
+00001512  33FC 000A 0007D798       954          move.w  #WALK_AUDIO_FRAME_DELAY, (framesUntilWalkingAudio)
+0000151A                           955          
+0000151A  43F9 0007D83E            956          lea     playerWalkingAudio, a1
+00001520  7049                     957          move.l  #PLAY_AUDIO, d0
+00001522  4E4F                     958          TRAP    #15
+00001524                           959          
+00001524                           960          SkipWalkingAudio:
+00001524                           961  
+00001524  4E75                     962          rts
+00001526                           963  
+00001526                           964  ; =======================================================================================
+00001526                           965      
+00001526                           966      
+00001526                           967      
+00001526                           968      
+00001526                           969      
+00001526                           970      
+00001526                           971  
+00001526                           972  
+00001526                           973  
+00001526                           974  
+00001526                           975  
+00001526                           976  
+00001526                           977  
+00001526                           978  
+00001526                           979  
+00001526                           980  
+00001526                           981  
+00001526                           982  
+00001526                           983  
+00001526                           984  
+00001526                           985  
+00001526                           986  
+00001526                           987  
+00001526                           988  
+00001526                           989  
+00001526                           990  
+00001526                           991  
+00001526                           992  
+00001526                           993  
+00001526                           994  -------------------- end include --------------------
+00001526                           995          
+00001526                           996          INCLUDE code/GameFlow.x68               ; game flow -- init, loss checks
+00001526                           997  
+00001526                           998  ; a collection of subroutines for initialization and game flow
+00001526                           999      
+00001526                          1000  ; =======================================================================================
+00001526                          1001  
+00001526                          1002  ; calls our other init functions
+00001526                          1003  InitGame:
+00001526                          1004  
+00001526                          1005          ; set draw mode to single buffer for background load
+00001526  7210                    1006          move.l  #SINGLE_BUFFER_MODE, d1
+00001528  705C                    1007          move.l  #SET_DRAW_MODE, d0
+0000152A  4E4F                    1008          TRAP    #15
+0000152C                          1009  
+0000152C  4EB9 0000155E           1010          jsr     InitGameplayVariables
+00001532  4EB9 000015B0           1011          jsr     InitGameObjsArray
+00001538  4EB9 000015D2           1012          jsr     InitBackground
+0000153E  4EB9 00001612           1013          jsr     InitRetryDialog
+00001544  4EB9 00001646           1014          jsr     InitLEDChunks
+0000154A  4EB9 00001694           1015          jsr     InitPlayer
+00001550  4EB9 000016EA           1016          jsr     InitTime
+00001556                          1017          
+00001556                          1018          ; set draw mode to double buffer for gameplay
+00001556  7211                    1019          move.l  #DOUBLE_BUFFER_MODE, d1
+00001558  705C                    1020          move.l  #SET_DRAW_MODE, d0
+0000155A  4E4F                    1021          TRAP    #15
+0000155C                          1022  
+0000155C  4E75                    1023          rts 
+0000155E                          1024  
+0000155E                          1025  ; ======================================================================================= 
+0000155E                          1026  
+0000155E                          1027  ; resets our flags and gameplay variables
+0000155E                          1028  InitGameplayVariables:
+0000155E                          1029  
+0000155E                          1030          ; clear gameplay variables and flags, seed the rng
+0000155E  23FC FFFFFFFF 0007D78A  1031          move.l  #-1, (score)                        ; init score to -1, so when we draw the first score, it is 0
+00001568  23FC 00000004 0007D78E  1032          move.l  #STARTING_LIVES+1, (lives)
+00001572                          1033          
+00001572  4EB8 10A4               1034          jsr     seedRNG
+00001576                          1035          
+00001576  33FC 010E 0007D796      1036          move.w  #FRAMES_UNTIL_OBJ_SPAWN, (framesUntilObjSpawn)
+0000157E                          1037          
+0000157E  33FC 000A 0007D798      1038          move.w  #WALK_AUDIO_FRAME_DELAY, (framesUntilWalkingAudio)
+00001586                          1039          
+00001586  33FC 0005 0007D79A      1040          move.w  #FRAMES_UNTIL_ANIM, (framesUntilAnimChange)
+0000158E  33FC 0005 0007D79C      1041          move.w  #NUM_FRAMES_IN_ANIM, (currentAnimFrame)
+00001596                          1042          
+00001596  33FC 000B 0007D79E      1043          move.w  #POINTS_UNTIL_ONE_UP+1, (pointsUntilOneUp)
+0000159E                          1044          
+0000159E  13FC 0000 0007D7A0      1045          move.b  #0, (didLoseFlag)
+000015A6  13FC 0000 0007D7A1      1046          move.b  #0, (willRetryFlag)
+000015AE                          1047  
+000015AE  4E75                    1048          rts
+000015B0                          1049          
+000015B0                          1050  ; ======================================================================================= 
+000015B0                          1051  
+000015B0                          1052  ; resets all entries in the game objects array to null
+000015B0                          1053  InitGameObjsArray:
+000015B0                          1054  
+000015B0                          1055          ; init game objects in array to null
+000015B0  41F9 0007D720           1056          lea     gameObjArray, a0
+000015B6  43F9 0007D786           1057          lea     currentGameObj, a1
+000015BC  2288                    1058          move.l  a0, (a1)                            ; init the currentGameObj to the start of the array
+000015BE                          1059          
+000015BE  7E02                    1060          move.l  #NUM_GAME_OBJS_IN_ARRAY-1, d7
+000015C0                          1061          StepThroughGameObjArray_Init:
+000015C0  20BC 00000000           1062          move.l  #0, (a0)                            ; 0 in the object image header is our flag for a null game object
+000015C6  D1FC 00000022           1063          adda.l  #GAME_OBJ_SIZE_W*2, a0
+000015CC  51CF FFF2               1064          dbra    d7, StepThroughGameObjArray_Init
+000015D0                          1065  
+000015D0  4E75                    1066          rts
+000015D2                          1067          
+000015D2                          1068  ; ======================================================================================= 
+000015D2                          1069  
+000015D2                          1070  ; draws the background
+000015D2                          1071  InitBackground:
+000015D2                          1072  
+000015D2  43F9 0007D7BA           1073          lea     loadAudio, a1
+000015D8  7049                    1074          move.l  #PLAY_AUDIO, d0
+000015DA  4E4F                    1075          TRAP    #15
+000015DC                          1076  
+000015DC                          1077          ; draw entire background image
+000015DC                          1078          ;       this is a special case where we don't draw the background relative to
+000015DC                          1079          ;       a game object's position, so we don't use DrawBackgroundChunk and instead
+000015DC                          1080          ;       just prepare the stack and call DrawChunk directly   
+000015DC  9FFC 00000010           1081          suba.l  #DRAW_CHUNK_STACK_SIZE, sp          ; prep stack
+000015E2                          1082          
+000015E2  41F9 0007D5F0           1083          lea     backgroundImgHeader, a0
+000015E8  2F48 000C               1084          move.l  a0, DRAW_HEADER_DATA-4(sp)          ; img header data
+000015EC  2F7C 00000000 0008      1085          move.l  #0, DRAW_CHUNK_X-4(sp)              ; chunk coords          (start at image origin (0,0))
+000015F4  2F7C 00000000 0000      1086          move.l  #0, DRAW_SCREEN_X-4(sp)             ; screen coords         (start at screen origin (0,0))
+000015FC  2F7C 028001E0 0004      1087          move.l  #BG_DIMENSIONS, DRAW_CHUNK_W-4(sp)  ; chunk dimensions
+00001604                          1088          
+00001604  4EB9 00001976           1089          jsr     DrawChunk
+0000160A  DFFC 00000010           1090          adda.l  #DRAW_CHUNK_STACK_SIZE, sp          ; restore stack
+00001610                          1091  
+00001610  4E75                    1092          rts
+00001612                          1093  
+00001612                          1094  ; =======================================================================================  
+00001612                          1095  
+00001612                          1096  ; initializes retry dialog
+00001612                          1097  InitRetryDialog
+00001612                          1098  
+00001612  41F9 0007D6BA           1099          lea     retryDialog, a0
+00001618                          1100          
+00001618  43F9 0007D64A           1101          lea     retryImgHeader, a1
+0000161E  2149 0000               1102          move.l  a1, IMG_HEADER_DATA(a0)
+00001622                          1103          
+00001622  217C 0000A000 0004      1104          move.l  #DIALOG_START_X, CURR_SCREEN_X(a0)
+0000162A  217C 00007800 0008      1105          move.l  #DIALOG_START_Y, CURR_SCREEN_Y(a0)
+00001632                          1106          
+00001632  317C 0140 001C          1107          move.w  #DIALOG_CHUNK_W, CHUNK_W(a0)
+00001638  317C 00F0 001E          1108          move.w  #DIALOG_CHUNK_H, CHUNK_H(a0)
+0000163E                          1109          
+0000163E  317C 0000 0020          1110          move.w  #0, CHUNK_FRAME(a0)
+00001644                          1111          
+00001644  4E75                    1112          rts
+00001646                          1113          
+00001646                          1114  ; =======================================================================================   
+00001646                          1115  
+00001646                          1116  ; initializes the regions used to paint our 7segment LED's for score and lives
+00001646                          1117  InitLEDChunks:
+00001646                          1118  
+00001646                          1119          ; define the region used to paint over the score when updating
+00001646  41F9 0007D676           1120          lea     scoreChunkRegion, a0
+0000164C  217C 00000000 000C      1121          move.l  #SCORE_START_X, PREV_SCREEN_X(a0)
+00001654  217C 00000000 0010      1122          move.l  #SCORE_START_Y, PREV_SCREEN_Y(a0)
+0000165C  317C 0046 001C          1123          move.w  #SCORE_CHUNK_W, CHUNK_W(a0)
+00001662  317C 003C 001E          1124          move.w  #SCORE_CHUNK_H, CHUNK_H(a0)
+00001668  4EB8 11CE               1125          jsr     IncrementScore                  ; draw the initialized score as 00
+0000166C                          1126          
+0000166C                          1127          ; define the region used to paint over the lives count when updating
+0000166C  41F9 0007D698           1128          lea     livesChunkRegion, a0
+00001672  217C 00023A00 000C      1129          move.l  #LIVES_START_X, PREV_SCREEN_X(a0)
+0000167A  217C 00000000 0010      1130          move.l  #LIVES_START_Y, PREV_SCREEN_Y(a0)
+00001682  317C 0046 001C          1131          move.w  #LIVES_CHUNK_W, CHUNK_W(a0)
+00001688  317C 003C 001E          1132          move.w  #LIVES_CHUNK_H, CHUNK_H(a0)
+0000168E  4EB8 1166               1133          jsr     DecrementLives
+00001692                          1134  
+00001692  4E75                    1135          rts
+00001694                          1136  
+00001694                          1137  ; =======================================================================================      
+00001694                          1138          
+00001694                          1139  ; initializes the player game object and its default values
+00001694                          1140  InitPlayer:
+00001694                          1141  
+00001694                          1142          ; init player variables
+00001694  41F9 0007D6FE           1143          lea     player, a0
+0000169A                          1144          
+0000169A  43F9 0007D602           1145          lea     playerHeaderIdle, a1                ; image header (init to idle animation)
+000016A0  2149 0000               1146          move.l  a1, IMG_HEADER_DATA(a0)
+000016A4                          1147          
+000016A4  217C 00014000 0004      1148          move.l  #PLAYER_START_X, CURR_SCREEN_X(a0)  ; starting position
+000016AC  217C 00019400 0008      1149          move.l  #PLAYER_START_Y, CURR_SCREEN_Y(a0)
+000016B4  217C 00014000 000C      1150          move.l  #PLAYER_START_X, PREV_SCREEN_X(a0)
+000016BC  217C 00019400 0010      1151          move.l  #PLAYER_START_Y, PREV_SCREEN_Y(a0)
+000016C4                          1152          
+000016C4  217C 00000700 0014      1153          move.l  #PLAYER_SPEED, SPEED_X(a0)          ; speed
+000016CC  217C 00000000 0018      1154          move.l  #0, SPEED_Y(a0)
+000016D4                          1155          
+000016D4  317C 0028 001C          1156          move.w  #PLAYER_CHUNK_W, CHUNK_W(a0)        ; chunk dimensions
+000016DA  317C 0028 001E          1157          move.w  #PLAYER_CHUNK_H, CHUNK_H(a0)
+000016E0                          1158          
+000016E0  3179 0007D79C 0020      1159          move.w  (currentAnimFrame), CHUNK_FRAME(a0) ; chunk animation frame
+000016E8                          1160  
+000016E8  4E75                    1161          rts
+000016EA                          1162          
+000016EA                          1163  ; =======================================================================================
+000016EA                          1164  
+000016EA                          1165  ; initializes timer for delta time
+000016EA                          1166  InitTime:
+000016EA                          1167  
+000016EA                          1168          ; initialize time tracking
+000016EA  7008                    1169          move.l  #GET_TIME, d0
+000016EC  4E4F                    1170          TRAP    #15
+000016EE  23C1 0007D672           1171          move.l  d1, prevFrameStartTime
+000016F4                          1172  
+000016F4  4E75                    1173          rts
+000016F6                          1174  
+000016F6                          1175  ; =======================================================================================
+000016F6                          1176  
+000016F6                          1177  ; handles input for the post-game retry confirmation dialog
+000016F6                          1178  ;       'Y' key sets the retry flag and restarts the game
+000016F6                          1179  ;       'N' key quits the game
+000016F6                          1180  HandleRetryConfirmation:
+000016F6                          1181  
+000016F6                          1182          HandleRetryLoop:
+000016F6                          1183          
+000016F6                          1184          ; set trap task to listen for Y or N
+000016F6  223C 0000594E           1185          move.l  #KEY_Y<<8+KEY_N, d1
+000016FC  7013                    1186          move.l  #GET_USER_INPUT, d0
+000016FE  4E4F                    1187          TRAP    #15
+00001700                          1188          
+00001700                          1189          ; check which inputs are detected
+00001700  0C41 FF00               1190          cmpi.w  #$FF00, d1          ; only Y detected
+00001704  6700 000C               1191          beq     ConfirmRetry
+00001708  0C41 00FF               1192          cmpi.w  #$00FF, d1          ; only N detected
+0000170C  6700 001A               1193          beq     DenyRetry
+00001710                          1194          
+00001710  60E4                    1195          bra     HandleRetryLoop     ; otherwise, nothing or both detected, continue loop
+00001712                          1196          
+00001712                          1197          ; confirm retry -- set retry flag and play confirm audio
+00001712                          1198          ConfirmRetry:
+00001712                          1199          
+00001712  13FC 00FF 0007D7A1      1200          move.b  #$FF, willRetryFlag
+0000171A                          1201          
+0000171A  43F9 0007D7D0           1202          lea     menuConfirmAudio, a1
+00001720  7049                    1203          move.l  #PLAY_AUDIO, d0
+00001722  4E4F                    1204          TRAP    #15
+00001724                          1205          
+00001724  6000 000C               1206          bra     EndHandleRetryConfirmation
+00001728                          1207          
+00001728                          1208          ; deny retry -- play cancel audio
+00001728                          1209          DenyRetry:
+00001728                          1210          
+00001728  43F9 0007D7EE           1211          lea     menuCancelAudio, a1
+0000172E  7049                    1212          move.l  #PLAY_AUDIO, d0
+00001730  4E4F                    1213          TRAP    #15
+00001732                          1214          
+00001732                          1215          EndHandleRetryConfirmation:
+00001732                          1216          
+00001732  4E75                    1217          rts
+00001734                          1218  
+00001734                          1219  ; =======================================================================================  
+00001734                          1220  
+00001734                          1221  ; initializes start dialog
+00001734                          1222  InitStartDialog
+00001734                          1223          
+00001734                          1224          ; init the start dialog
+00001734  41F9 0007D6DC           1225          lea     startDialog, a0
+0000173A                          1226          
+0000173A  43F9 0007D65C           1227          lea     startImgHeader, a1
+00001740  2149 0000               1228          move.l  a1, IMG_HEADER_DATA(a0)
+00001744                          1229          
+00001744  217C 0000A000 0004      1230          move.l  #DIALOG_START_X, CURR_SCREEN_X(a0)
+0000174C  217C 00007800 0008      1231          move.l  #DIALOG_START_Y, CURR_SCREEN_Y(a0)
+00001754                          1232          
+00001754  317C 0140 001C          1233          move.w  #DIALOG_CHUNK_W, CHUNK_W(a0)
+0000175A  317C 00F0 001E          1234          move.w  #DIALOG_CHUNK_H, CHUNK_H(a0)
+00001760                          1235          
+00001760  317C 0000 0020          1236          move.w  #0, CHUNK_FRAME(a0)
+00001766                          1237  
+00001766  4E75                    1238          rts
+00001768                          1239          
+00001768                          1240  ; =======================================================================================  
+00001768                          1241  
+00001768                          1242  ; pauses the flow of the program until the spacebar is pressed to begin the game
+00001768                          1243  HandleBeginConfirmation:
+00001768                          1244  
+00001768                          1245          ; set full screen mode
+00001768  4EB9 00001A20           1246          jsr     SetFullScreen
+0000176E                          1247  
+0000176E                          1248          ; clear the screen and display a start dialog
+0000176E  4EB9 000019F2           1249          jsr     ClearScreen
+00001774  4EB8 1734               1250          jsr     InitStartDialog
+00001778                          1251          
+00001778  43F9 0007D7A3           1252          lea     startAudio, a1
+0000177E  7049                    1253          move.l  #PLAY_AUDIO, d0
+00001780  4E4F                    1254          TRAP    #15
+00001782                          1255          
+00001782  41F9 0007D6DC           1256          lea     startDialog, a0
+00001788  2F08                    1257          move.l  a0, -(sp)
+0000178A  4EB9 0000192A           1258          jsr     DrawGameObjChunk
+00001790  205F                    1259          move.l  (sp)+, a0
+00001792                          1260  
+00001792  705E                    1261          move.l  #REPAINT_SCREEN, d0
+00001794  4E4F                    1262          TRAP    #15
+00001796                          1263  
+00001796                          1264          HandleBeginLoop:
+00001796                          1265          
+00001796                          1266          ; set trap task to listen for spacebar or q
+00001796  223C 00002051           1267          move.l  #KEY_SPACE<<8+KEY_Q, d1
+0000179C  7013                    1268          move.l  #GET_USER_INPUT, d0
+0000179E  4E4F                    1269          TRAP    #15
+000017A0                          1270          
+000017A0  0C41 FF00               1271          cmpi.w  #$FF00, d1          ; only spacebar detected
+000017A4  6700 0022               1272          beq     StartGame
+000017A8  0C41 00FF               1273          cmpi.w  #$00FF, d1          ; only 'q' detected
+000017AC  6700 0004               1274          beq     SetQuitFlag
+000017B0                          1275          
+000017B0  60E4                    1276          bra     HandleBeginLoop
+000017B2                          1277          
+000017B2                          1278          SetQuitFlag:
+000017B2                          1279          
+000017B2                          1280          ; quitting, set quit flag and play cancel audio
+000017B2  13FC 00FF 0007D7A2      1281          move.b  #$FF, didQuitFlag
+000017BA                          1282          
+000017BA  43F9 0007D7EE           1283          lea     menuCancelAudio, a1
+000017C0  7049                    1284          move.l  #PLAY_AUDIO, d0
+000017C2  4E4F                    1285          TRAP    #15
+000017C4                          1286          
+000017C4  6000 000C               1287          bra     EndHandleBeginConfirmation      ; skip playing confirmation audio
+000017C8                          1288          
+000017C8                          1289          StartGame:
+000017C8                          1290          
+000017C8                          1291          ; starting game, play confirmation audio
+000017C8  43F9 0007D7D0           1292          lea     menuConfirmAudio, a1
+000017CE  7049                    1293          move.l  #PLAY_AUDIO, d0
+000017D0  4E4F                    1294          TRAP    #15
+000017D2                          1295          
+000017D2                          1296          EndHandleBeginConfirmation:
+000017D2  4E75                    1297          rts
+000017D4                          1298  
+000017D4                          1299  ; =======================================================================================
+000017D4                          1300          
+000017D4                          1301          
+000017D4                          1302          
+000017D4                          1303          
+000017D4                          1304          
+000017D4                          1305          
+000017D4                          1306  
+000017D4                          1307  
+000017D4                          1308  
+000017D4                          1309  
+000017D4                          1310  
+000017D4                          1311  
+000017D4                          1312  
+000017D4                          1313  
+000017D4                          1314  
+000017D4                          1315  
+000017D4                          1316  
+000017D4                          1317  
+000017D4                          1318  
+000017D4                          1319  
+000017D4                          1320  
+000017D4                          1321  
+000017D4                          1322  
+000017D4                          1323  
+000017D4                          1324  
+000017D4                          1325  
+000017D4                          1326  
+000017D4                          1327  
+000017D4                          1328  
+000017D4                          1329  
+000017D4                          1330  
+000017D4                          1331  
+000017D4                          1332  
+000017D4                          1333  
+000017D4                          1334  
+000017D4                          1335  
+000017D4                          1336  
+000017D4                          1337  
+000017D4                          1338  
+000017D4                          1339  
+000017D4                          1340  
+000017D4                          1341  
+000017D4                          1342  
+000017D4                          1343  -------------------- end include --------------------
+000017D4                          1344          
+000017D4                          1345          INCLUDE code/graphics/ParseBitmaps.x68  ; bitmap handling
+000017D4                          1346      
+000017D4                          1347  ; takes all images and unpacks their headers into memory so our draw
+000017D4                          1348  ; calls won't get bogged down with repeated calls to ParseImage
+000017D4                          1349  LoadImages:
+000017D4                          1350  
+000017D4                          1351          ; parse the background image
+000017D4  41F9 0007D5F0           1352          lea     backgroundImgHeader, a0
+000017DA  43F9 00001A76           1353          lea     backgroundImg, a1
+000017E0  4EB9 00001854           1354          jsr     ParseImage
+000017E6                          1355          
+000017E6                          1356          ; parse the game object images, save the address of the header object
+000017E6  41F9 0007D602           1357          lea     playerHeaderIdle, a0        ; player idle animation
+000017EC  43F9 0004CEAC           1358          lea     playerImgIdle, a1
+000017F2  4EB9 00001854           1359          jsr     ParseImage
+000017F8                          1360          
+000017F8  41F9 0007D614           1361          lea     playerHeaderLeft, a0        ; player left animation
+000017FE  43F9 0004F862           1362          lea     playerImgLeft, a1
+00001804  4EB9 00001854           1363          jsr     ParseImage
+0000180A                          1364          
+0000180A  41F9 0007D626           1365          lea     playerHeaderRight, a0       ; player right animation
+00001810  43F9 00052218           1366          lea     playerImgRight, a1
+00001816  4EB9 00001854           1367          jsr     ParseImage
+0000181C                          1368          
+0000181C  41F9 0007D638           1369          lea     objImgHeader, a0            ; game object animation
+00001822  43F9 00054BCE           1370          lea     objImg, a1
+00001828  4EB9 00001854           1371          jsr     ParseImage
+0000182E                          1372          
+0000182E                          1373          ; parse dialog images
+0000182E  41F9 0007D64A           1374          lea     retryImgHeader,a0           ; retry dialog
+00001834  43F9 00057584           1375          lea     retryImg, a1
+0000183A  4EB9 00001854           1376          jsr     ParseImage
+00001840                          1377          
+00001840  41F9 0007D65C           1378          lea     startImgHeader, a0          ; start dialog
+00001846  43F9 0006A5BA           1379          lea     startImg, a1
+0000184C  4EB9 00001854           1380          jsr     ParseImage
+00001852                          1381  
+00001852  4E75                    1382          rts
+00001854                          1383          
+00001854                          1384  ; =======================================================================================
+00001854                          1385          
+00001854                          1386  ; populates a block of memory whose start is kept in a0 with data from the header of a bmp file
+00001854                          1387  ;       a0 = memory location of image header data block
+00001854                          1388  ;       a1 = memory location of image we are parsing
+00001854                          1389  ParseImage:
+00001854                          1390  
+00001854                          1391          ; move the image start into the header block
+00001854  2149 0000               1392          move.l  a1, IMG_START(a0)
+00001858                          1393          
+00001858                          1394          ; move address of image pixel array into the header block
+00001858  2029 000A               1395          move.l  BMP_HEADER_END(a1), d0      ;   the last word of the Bitmap FileHeader is the offset from the
+0000185C  4EB8 10EA               1396          jsr     ByteSwap                    ;   file start to the pixel array
+00001860  2449                    1397          move.l  a1, a2
+00001862  D5C0                    1398          adda.l  d0, a2                      ;   address of pixel array = image address + offset
+00001864  214A 0004               1399          move.l  a2, PIXEL_ARRAY(a0)
+00001868                          1400          
+00001868                          1401          ; move address of image color table into the header block
+00001868  2029 000E               1402          move.l  BMP_HEADER_SIZE(a1), d0     ;   first word of the DIB Header is the size of the DIB Header
+0000186C  4EB8 10EA               1403          jsr     ByteSwap
+00001870  2449                    1404          move.l  a1, a2                      ;   address of color table =
+00001872  D5FC 0000000E           1405          adda.l  #BMP_HEADER_SIZE, a2        ;       image address + BMP header size + DIB header size
+00001878  D5C0                    1406          adda.l  d0, a2
+0000187A  214A 0008               1407          move.l  a2, COLOR_TABLE(a0)
+0000187E                          1408          
+0000187E                          1409          ; move image width to the header block
+0000187E  2029 0012               1410          move.l  BMP_HEADER_SIZE+FROM_HEADER_TO_W(a1), d0
+00001882  4EB8 10EA               1411          jsr     ByteSwap
+00001886  3140 000C               1412          move.w  d0, IMG_W(a0)
+0000188A                          1413          
+0000188A                          1414          ; get number of padding bytes, add it to the header block
+0000188A  0280 00000003           1415          andi.l  #$00000003, d0              ; using a bitmask to get the bottom 2 bits of image width
+00001890  7204                    1416          move.l  #4, d1
+00001892  9280                    1417          sub.l   d0, d1                      ; the bottom 2 bits of the difference between 4 and the width's bottom 2 bits
+00001894  0281 00000003           1418          andi.l  #$00000003, d1              ; gives us the number of padding bits added to each row
+0000189A  3141 0010               1419          move.w  d1, PADDING(a0)
+0000189E                          1420          
+0000189E                          1421          ; move image height to the header block
+0000189E  2029 0016               1422          move.l  BMP_HEADER_SIZE+FROM_HEADER_TO_H(a1), d0
+000018A2  4EB8 10EA               1423          jsr     ByteSwap
+000018A6  3140 000E               1424          move.w  d0, IMG_H(a0)
+000018AA                          1425  
+000018AA  4E75                    1426          rts
+000018AC                          1427          
+000018AC                          1428  ; =======================================================================================
+000018AC                          1429  
+000018AC                          1430  
+000018AC                          1431  
+000018AC                          1432  
+000018AC                          1433  
+000018AC                          1434  
+000018AC                          1435  
+000018AC                          1436  
+000018AC                          1437  
+000018AC                          1438  
+000018AC                          1439  
+000018AC                          1440  
+000018AC                          1441  
+000018AC                          1442  
+000018AC                          1443  
+000018AC                          1444  
+000018AC                          1445  -------------------- end include --------------------
+000018AC                          1446          INCLUDE code/graphics/DrawBitmaps.x68
+000018AC                          1447      
+000018AC                          1448  ; takes all game objects and draws them
+000018AC                          1449  ;       first draws chunks of the background image at the previous screen locations of each game object
+000018AC                          1450  ;       then draws each game object at their current screen location
+000018AC                          1451  RefreshScreen:
+000018AC                          1452  
+000018AC                          1453          ; refresh background at previous object positions
+000018AC  41F9 0007D6FE           1454          lea     player, a0
+000018B2  2F08                    1455          move.l  a0, -(sp)
+000018B4  4EB9 000018E6           1456          jsr     DrawBackgroundChunk
+000018BA  4EB9 0000192A           1457          jsr     DrawGameObjChunk
+000018C0  205F                    1458          move.l  (sp)+, a0
+000018C2                          1459          
+000018C2                          1460          ; draw the currentGameObj
+000018C2                          1461          ;       since we've only updated one game object this frame, this saves us tons of time per draw
+000018C2  41F9 0007D786           1462          lea     currentGameObj, a0
+000018C8  2250                    1463          move.l  (a0), a1
+000018CA  2011                    1464          move.l  (a1), d0
+000018CC  6700 0012               1465          beq     AfterDrawCurrentGameObj         ; check if the current game object is null (skip draw if null)
+000018D0                          1466          
+000018D0  2F09                    1467          move.l  a1, -(sp)
+000018D2  4EB9 000018E6           1468          jsr     DrawBackgroundChunk
+000018D8  4EB9 0000192A           1469          jsr     DrawGameObjChunk
+000018DE  205F                    1470          move.l  (sp)+, a0
+000018E0                          1471          
+000018E0                          1472          AfterDrawCurrentGameObj:
+000018E0                          1473   
+000018E0                          1474          ; copy the buffer to the screen, then return
+000018E0  705E                    1475          move.l  #REPAINT_SCREEN, d0
+000018E2  4E4F                    1476          TRAP    #15
+000018E4                          1477  
+000018E4  4E75                    1478          rts
+000018E6                          1479   
+000018E6                          1480  ; =======================================================================================
+000018E6                          1481  
+000018E6                          1482  ; draws a chunk of the background at the previous screen location of the given game object
+000018E6                          1483  ;
+000018E6                          1484  ;       have to subtract offsets by 4 here to account for return address added with 
+000018E6                          1485  ;       'jsr    DrawChunk'
+000018E6                          1486  DrawBackgroundChunk:
+000018E6                          1487  
+000018E6                          1488          ; prepare the stack with values for DrawChunk
+000018E6  9FFC 00000010           1489          suba.l  #DRAW_CHUNK_STACK_SIZE, sp
+000018EC                          1490          
+000018EC  41F9 0007D5F0           1491          lea     backgroundImgHeader, a0                 ; move background img header data onto stack
+000018F2  2F48 000C               1492          move.l  a0, DRAW_HEADER_DATA-4(sp)
+000018F6                          1493          
+000018F6  226F 0014               1494          move.l  OBJECT_BLOCK(sp), a1                    ; get the object's pointer 
+000018FA                          1495          
+000018FA  2F69 001C 0004          1496          move.l  CHUNK_W(a1), DRAW_CHUNK_W-4(sp)         ; the chunk's dimensions is the object's dimensions
+00001900                          1497          
+00001900  2029 000C               1498          move.l  PREV_SCREEN_X(a1), d0                   ; remove fractional bits from object position
+00001904  2229 0010               1499          move.l  PREV_SCREEN_Y(a1), d1
+00001908  E088                    1500          lsr.l   #FRACTIONAL_BIT_COUNT, d0
+0000190A  E089                    1501          lsr.l   #FRACTIONAL_BIT_COUNT, d1
+0000190C                          1502          
+0000190C  3F40 0008               1503          move.w  d0, DRAW_CHUNK_X-4(sp)                  ; the chunk's coords and screen position are the
+00001910  3F41 000A               1504          move.w  d1, DRAW_CHUNK_Y-4(sp)                  ; object's position from the previous frame
+00001914  3F40 0000               1505          move.w  d0, DRAW_SCREEN_X-4(sp)
+00001918  3F41 0002               1506          move.w  d1, DRAW_SCREEN_Y-4(sp)
+0000191C                          1507          
+0000191C  4EB9 00001976           1508          jsr     DrawChunk
+00001922                          1509          
+00001922                          1510          ; restore the stack
+00001922  DFFC 00000010           1511          adda.l  #DRAW_CHUNK_STACK_SIZE, sp
+00001928                          1512  
+00001928  4E75                    1513          rts
+0000192A                          1514  
+0000192A                          1515  ; =======================================================================================
+0000192A                          1516  
+0000192A                          1517  ; draws a chunk of the given game object
+0000192A                          1518  ;
+0000192A                          1519  ;       have to subtract offsets by 4 here to account for return address added with
+0000192A                          1520  ;       'jsr    DrawChunk'
+0000192A                          1521  DrawGameObjChunk:
+0000192A                          1522  
+0000192A                          1523          ; prepare the stack with values for DrawChunk
+0000192A  9FFC 00000010           1524          suba.l  #DRAW_CHUNK_STACK_SIZE, sp
+00001930                          1525          
+00001930  206F 0014               1526          move.l  OBJECT_BLOCK(sp), a0                                ; get the object's image data pointer
+00001934  2F68 0000 000C          1527          move.l  IMG_HEADER_DATA(a0), DRAW_HEADER_DATA-4(sp)
+0000193A                          1528          
+0000193A  2F68 001C 0004          1529          move.l  CHUNK_W(a0), DRAW_CHUNK_W-4(sp)                     ; chunk dimensions
+00001940                          1530          
+00001940  3028 001C               1531          move.w  CHUNK_W(a0), d0
+00001944  3228 0020               1532          move.w  CHUNK_FRAME(a0), d1
+00001948  C2C0                    1533          mulu    d0, d1
+0000194A  3F41 0008               1534          move.w  d1, DRAW_CHUNK_X-4(sp)                              ; chunks of objects start at x-coord = chunk-width * current animation frame
+0000194E  3F7C 0000 000A          1535          move.w  #0, DRAW_CHUNK_Y-4(sp)                              ; chunks of objects start at y-coord = 0
+00001954                          1536  
+00001954  2028 0004               1537          move.l  CURR_SCREEN_X(a0), d0                               ; remove fractional bits from object position
+00001958  2228 0008               1538          move.l  CURR_SCREEN_Y(a0), d1
+0000195C  E088                    1539          lsr.l   #FRACTIONAL_BIT_COUNT, d0
+0000195E  E089                    1540          lsr.l   #FRACTIONAL_BIT_COUNT, d1
+00001960                          1541          
+00001960  3F40 0000               1542          move.w  d0, DRAW_SCREEN_X-4(sp)
+00001964  3F41 0002               1543          move.w  d1, DRAW_SCREEN_Y-4(sp)
+00001968                          1544          
+00001968  4EB9 00001976           1545          jsr     DrawChunk
+0000196E                          1546          
+0000196E                          1547          ; restore the stack
+0000196E  DFFC 00000010           1548          adda.l  #DRAW_CHUNK_STACK_SIZE, sp
+00001974                          1549  
+00001974  4E75                    1550          rts
+00001976                          1551  
+00001976                          1552  ; =======================================================================================
+00001976                          1553  
+00001976                          1554  ; draws a chunk of the provided image
+00001976                          1555  ;       data on the image to use, the chunk position and size, and the screen position
+00001976                          1556  ;       are all stored on the stack before this function is called
+00001976                          1557  DrawChunk:
+00001976                          1558  
+00001976                          1559          ; get the address of the pixel array and color table out of the image header data block
+00001976  266F 0010               1560          move.l  DRAW_HEADER_DATA(sp), a3
+0000197A  206B 0004               1561          move.l  PIXEL_ARRAY(a3), a0         ; a0 = pixel array address
+0000197E  226B 0008               1562          move.l  COLOR_TABLE(a3), a1         ; a1 = color table address
+00001982                          1563          
+00001982                          1564          ; init some important values for the draw loops
+00001982  4287                    1565          clr.l   d7
+00001984  3E2B 000C               1566          move.w  IMG_W(a3), d7               ; d7 = image width
+00001988  3C2B 0010               1567          move.w  PADDING(a3), d6             ; d6 = image padding
+0000198C  3A2F 0008               1568          move.w  DRAW_CHUNK_W(sp), d5        ; d5 = chunk width counter
+00001990  382F 0004               1569          move.w  DRAW_SCREEN_X(sp), d4       ; d4 = current screen x
+00001994                          1570          
+00001994                          1571          ; get the address of the chunk start
+00001994  302B 000E               1572          move.w  IMG_H(a3), d0               ; because bitmaps store their pixel array rows in reverse order
+00001998  906F 000E               1573          sub.w   DRAW_CHUNK_Y(sp), d0        ; the top row of the chunk is technically an offset from the image height
+0000199C  5340                    1574          sub.w   #1, d0                      ;       true chunk y (in terms of bmp pixel array) = image height - chunk y - 1
+0000199E  3200                    1575          move.w  d0, d1
+000019A0                          1576                               
+000019A0  C0C7                    1577          mulu.w  d7, d0                      ; byte offset from start of image to start of chunk = 
+000019A2  C2C6                    1578          mulu.w  d6, d1                      ;       (image width * true chunk y) + (padding * true chunk y) + chunk x       
+000019A4  D081                    1579          add.l   d1, d0        
+000019A6  4282                    1580          clr.l   d2
+000019A8  342F 000C               1581          move.w  DRAW_CHUNK_X(sp), d2                    
+000019AC  D082                    1582          add.l   d2, d0
+000019AE                          1583          
+000019AE  2448                    1584          move.l  a0, a2                      ; address of chunk start = pixel array address + byte offset to chunk start
+000019B0  D5C0                    1585          adda.l  d0, a2                      ;       a2 = address of current pixel
+000019B2                          1586          
+000019B2                          1587          DrawLoop:
+000019B2                          1588          
+000019B2                          1589          ; get the current pixel out of the pixel array
+000019B2  4280                    1590          clr.l   d0
+000019B4  1012                    1591          move.b  (a2), d0                    ; getting the index in the color table
+000019B6  E588                    1592          lsl.l   #2, d0                      ; each entry in color table is 4 bytes, so we have to multiply the index by 4
+000019B8                          1593          
+000019B8  2231 0000               1594          move.l  (a1, d0), d1                ; getting color out of color table
+000019BC  E089                    1595          lsr.l   #8, d1                      ; else, shift out the leading 0's so the color is formatted as $00BBGGRR
+000019BE  6700 0010               1596          beq     SkipDrawCurrentPixel        ; if the color is black, skip drawing it (black as transparent)
+000019C2                          1597          
+000019C2                          1598          ; set the pen using the current color in d1
+000019C2  7050                    1599          move.l  #SET_PEN_COLOR, d0
+000019C4  4E4F                    1600          TRAP    #15
+000019C6                          1601          
+000019C6                          1602          ; draw the pixel at the current screen position
+000019C6  7052                    1603          move.l  #DRAW_PIXEL, d0
+000019C8  3204                    1604          move.w  d4, d1                      ; current screen x to d1
+000019CA  342F 0006               1605          move.w  DRAW_SCREEN_Y(sp), d2       ; current screen y to d2
+000019CE  4E4F                    1606          TRAP    #15
+000019D0                          1607          
+000019D0                          1608          SkipDrawCurrentPixel:
+000019D0                          1609          
+000019D0                          1610          ; handle x value changes
+000019D0  5244                    1611          addi.w  #1, d4                      ; increment screen x
+000019D2  528A                    1612          adda.l  #1, a2                      ; increment address of current pixel
+000019D4  5345                    1613          subi.w  #1, d5                      ; decrement chunk w counter
+000019D6  66DA                    1614          bne     DrawLoop                    ;       loop back if pixels in row remain
+000019D8                          1615          
+000019D8                          1616          ; restore the chunk width counter and screen x for the next row
+000019D8  3A2F 0008               1617          move.w  DRAW_CHUNK_W(sp), d5        ; d6 = chunk width counter
+000019DC  382F 0004               1618          move.w  DRAW_SCREEN_X(sp), d4       ; d5 = current screen x
+000019E0                          1619          
+000019E0                          1620          ; get address of next chunk row
+000019E0  95C7                    1621          suba.l  d7, a2                      ; start address of next chunk row =
+000019E2  95C6                    1622          suba.l  d6, a2                      ;       end address of last chunk row - image width - padding - chunk width
+000019E4  95C5                    1623          suba.l  d5, a2
+000019E6                          1624          
+000019E6                          1625          ; handle y value changes
+000019E6  526F 0006               1626          addi.w  #1, DRAW_SCREEN_Y(sp)       ; increment screen y
+000019EA  536F 000A               1627          subi.w  #1, DRAW_CHUNK_H(sp)        ; decrement num remaining rows
+000019EE  66C2                    1628          bne     DrawLoop                    ;       loop back if rows remain
+000019F0                          1629          
+000019F0                          1630          AfterDrawLoop:
+000019F0                          1631          
+000019F0  4E75                    1632          rts
+000019F2                          1633  
+000019F2                          1634  ; =======================================================================================
+000019F2                          1635  
+000019F2                          1636  ; draws a black rectangle over the entirety of the screen to clear it
+000019F2                          1637  ClearScreen:
+000019F2                          1638  
+000019F2                          1639          ; set draw mode to double buffer for gameplay
+000019F2  7211                    1640          move.l  #DOUBLE_BUFFER_MODE, d1
+000019F4  705C                    1641          move.l  #SET_DRAW_MODE, d0
+000019F6  4E4F                    1642          TRAP    #15
+000019F8                          1643          
+000019F8                          1644          ; set pen and fill color for rectangle
+000019F8  7200                    1645          move.l  #$00000000, d1
+000019FA                          1646          
+000019FA  7050                    1647          move.l  #SET_PEN_COLOR, d0
+000019FC  4E4F                    1648          TRAP    #15
+000019FE                          1649          
+000019FE  7051                    1650          move.l  #SET_FILL_COLOR, d0
+00001A00  4E4F                    1651          TRAP    #15
+00001A02                          1652          
+00001A02                          1653          ; set bounds and draw rectangle
+00001A02  7057                    1654          move.l  #DRAW_FILLED_RECT, d0
+00001A04  2E3C 028001E0           1655          move.l  #BG_DIMENSIONS, d7
+00001A0A                          1656          
+00001A0A  323C 0000               1657          move.w  #0, d1          ; upper left
+00001A0E  343C 0000               1658          move.w  #0, d2
+00001A12  3807                    1659          move.w  d7, d4          ; lower right
+00001A14  4847                    1660          swap    d7
+00001A16  3607                    1661          move.w  d7, d3
+00001A18                          1662          
+00001A18  4E4F                    1663          TRAP    #15
+00001A1A                          1664          
+00001A1A                          1665          ; repaint the screen
+00001A1A  705E                    1666          move.l  #REPAINT_SCREEN, d0
+00001A1C  4E4F                    1667          TRAP    #15
+00001A1E                          1668  
+00001A1E  4E75                    1669          rts
+00001A20                          1670  
+00001A20                          1671  ; =======================================================================================
+00001A20                          1672  
+00001A20                          1673  ; sets the game window to full screen mode
+00001A20                          1674  SetFullScreen:
+00001A20                          1675  
+00001A20  7202                    1676          move.l  #FULLSCREEN_MODE, d1
+00001A22  7021                    1677          move.l  #SET_WINDOW_MODE, d0
+00001A24  4E4F                    1678          TRAP    #15
+00001A26                          1679  
+00001A26  4E75                    1680          rts
+00001A28                          1681  
+00001A28                          1682  ; =======================================================================================
+00001A28                          1683  
+00001A28                          1684  
+00001A28                          1685  
+00001A28                          1686  
+00001A28                          1687  
+00001A28                          1688  
+00001A28                          1689  
+00001A28                          1690  
+00001A28                          1691  
+00001A28                          1692  
+00001A28                          1693  
+00001A28                          1694  
+00001A28                          1695  
+00001A28                          1696  
+00001A28                          1697  
+00001A28                          1698  
+00001A28                          1699  
+00001A28                          1700  
+00001A28                          1701  
+00001A28                          1702  
+00001A28                          1703  
+00001A28                          1704  
+00001A28                          1705  
+00001A28                          1706  
+00001A28                          1707  
+00001A28                          1708  
+00001A28                          1709  
+00001A28                          1710  
+00001A28                          1711  
+00001A28                          1712  
+00001A28                          1713  
+00001A28                          1714  
+00001A28                          1715  
+00001A28                          1716  
+00001A28                          1717  
+00001A28                          1718  
+00001A28                          1719  
+00001A28                          1720  
+00001A28                          1721  
+00001A28                          1722  -------------------- end include --------------------
+00001A28                          1723          
+00001A28  4E72 2000               1724          STOP    #$2000
+00001A2C                          1725          
+00001A2C                          1726  ; =======================================================================================
+00001A2C                          1727  
+00001A2C                          1728          INCLUDE code/util/VarDefinitions.x68    ; variable and table definitions
+00001A2C                          1729  
+00001A2C                          1730  ; defines gameplay variables and lookup tables
+00001A2C                          1731  
+00001A2C                          1732  ; =======================================================================================
+00001A2C                          1733  ; === TABLES === ;
+00001A2C                          1734  ;           lookup tables and other such stuff
+00001A2C                          1735  
+00001A2C                          1736                          ;       x   y
+00001A2C= 0028 000A               1737  digitStartPositions     dc.w    40, 10      ; ones digit
+00001A30= 000A 000A               1738                          dc.w    10, 10      ; tens digit
+00001A34                          1739                          
+00001A34                          1740                          ;       0    1    2    3    4    5    6    7    8    9
+00001A34= 3F 06 5B 4F 66 6D ...   1741  digitSegmentMasks       dc.b    $3F, $06, $5B, $4F, $66, $6D, $7D, $07, $7F, $6F
+00001A3E                          1742  
+00001A3E                          1743                          ;       start (x,y), end (x,y)
+00001A3E= 0000 0014 0014 0014     1744  segmentPositions        dc.w    0, 20, 20, 20       ; G
+00001A46= 0000 0000 0000 0014     1745                          dc.w    0, 0, 0, 20         ; F
+00001A4E= 0000 0014 0000 0028     1746                          dc.w    0, 20, 0, 40        ; E
+00001A56= 0000 0028 0014 0028     1747                          dc.w    0, 40, 20, 40       ; D
+00001A5E= 0014 0014 0014 0028     1748                          dc.w    20, 20, 20, 40      ; C
+00001A66= 0014 0000 0014 0014     1749                          dc.w    20, 0, 20, 20       ; B
+00001A6E= 0000 0000 0014 0000     1750                          dc.w    0, 0, 20, 0         ; A
+00001A76                          1751  
+00001A76                          1752  
+00001A76                          1753  ; =======================================================================================
+00001A76                          1754  ; === GRAPHICS VARIABLES === ;
+00001A76                          1755  ;           variables for graphics (image pointers and blocks for header data
+00001A76                          1756  
+00001A76                          1757  ; image files
+00001A76                          1758  backgroundImg           INCBIN  "assets/imgs/background.bmp"
+0004CEAC                          1759  
+0004CEAC                          1760  playerImgIdle           INCBIN  "assets/imgs/player_idle.bmp"
+0004F862                          1761  playerImgLeft           INCBIN  "assets/imgs/player_left.bmp"
+00052218                          1762  playerImgRight          INCBIN  "assets/imgs/player_right.bmp"
+00054BCE                          1763  
+00054BCE                          1764  objImg                  INCBIN  "assets/imgs/obj.bmp"
+00057584                          1765  
+00057584                          1766  retryImg                INCBIN  "assets/imgs/retry_dialog.bmp"
+0006A5BA                          1767  startImg                INCBIN  "assets/imgs/start_dialog.bmp"
+0007D5F0                          1768  
+0007D5F0                          1769  ; blocks for data parsed from image headers
+0007D5F0                          1770  backgroundImgHeader     ds.w    HEADER_SIZE_W
+0007D602                          1771  
+0007D602                          1772  playerHeaderIdle        ds.w    HEADER_SIZE_W
+0007D614                          1773  playerHeaderLeft        ds.w    HEADER_SIZE_W
+0007D626                          1774  playerHeaderRight       ds.w    HEADER_SIZE_W
+0007D638                          1775  
+0007D638                          1776  objImgHeader            ds.w    HEADER_SIZE_W
+0007D64A                          1777  
+0007D64A                          1778  retryImgHeader          ds.w    HEADER_SIZE_W
+0007D65C                          1779  startImgHeader          ds.w    HEADER_SIZE_W
+0007D66E                          1780  
+0007D66E                          1781  
+0007D66E                          1782  ; =======================================================================================
+0007D66E                          1783  ; === GAME VARIABLES === ;
+0007D66E                          1784  ;           important game variables
+0007D66E                          1785  ;               have to keep these here in main, because keeping them in EquDefinitions
+0007D66E                          1786  ;               does weird things to jsr calls (maybe because of the large addresses?)
+0007D66E                          1787  
+0007D66E                          1788  ; time keeping variables
+0007D66E                          1789  deltaTime               ds.l    1       ; in 1/100's of seconds
+0007D672                          1790  prevFrameStartTime      ds.l    1
+0007D676                          1791  
+0007D676                          1792  ; game objects
+0007D676                          1793  scoreChunkRegion        ds.w    GAME_OBJ_SIZE_W
+0007D698                          1794  livesChunkRegion        ds.w    GAME_OBJ_SIZE_W
+0007D6BA                          1795  
+0007D6BA                          1796  retryDialog             ds.w    GAME_OBJ_SIZE_W
+0007D6DC                          1797  startDialog             ds.w    GAME_OBJ_SIZE_W
+0007D6FE                          1798  
+0007D6FE                          1799  player                  ds.w    GAME_OBJ_SIZE_W
+0007D720                          1800  gameObjArray            ds.w    GAME_OBJ_SIZE_W*NUM_GAME_OBJS_IN_ARRAY
+0007D786                          1801  currentGameObj          ds.l    1
+0007D78A                          1802  
+0007D78A                          1803  ; score keeping
+0007D78A                          1804  score                   ds.l    1
+0007D78E                          1805  lives                   ds.l    1
+0007D792                          1806  
+0007D792                          1807  ; gameplay variables
+0007D792                          1808  randomNumber            ds.l    1
+0007D796                          1809  
+0007D796                          1810  framesUntilObjSpawn     ds.w    1       ; frames count until spawn object attempt
+0007D798                          1811  
+0007D798                          1812  framesUntilWalkingAudio ds.w    1       ; frames until the player walking audio may play again
+0007D79A                          1813  
+0007D79A                          1814  framesUntilAnimChange   ds.w    1       ; frames count until animation frame change
+0007D79C                          1815  currentAnimFrame        ds.w    1       ; current animation frame number (0-5 inclusive)
+0007D79E                          1816  
+0007D79E                          1817  pointsUntilOneUp        ds.w    1       ; points needed until a life is added
+0007D7A0                          1818  
+0007D7A0                          1819  didLoseFlag             ds.b    1
+0007D7A1                          1820  willRetryFlag           ds.b    1
+0007D7A2= 00                      1821  didQuitFlag             dc.b    $00
+0007D7A3                          1822  
+0007D7A3                          1823  
+0007D7A3                          1824  ; =======================================================================================
+0007D7A3                          1825  ; === AUDIO VARIABLES === ;
+0007D7A3                          1826  ;           file paths for audio assets
+0007D7A3                          1827  
+0007D7A3= 61 73 73 65 74 73 ...   1828  startAudio              dc.b    'assets/audio/start.wav',0
+0007D7BA= 61 73 73 65 74 73 ...   1829  loadAudio               dc.b    'assets/audio/load.wav',0
+0007D7D0= 61 73 73 65 74 73 ...   1830  menuConfirmAudio        dc.b    'assets/audio/menu_confirm.wav',0
+0007D7EE= 61 73 73 65 74 73 ...   1831  menuCancelAudio         dc.b    'assets/audio/menu_cancel.wav',0
+0007D80B                          1832  
+0007D80B= 61 73 73 65 74 73 ...   1833  dispenseObjAudio        dc.b    'assets/audio/spawn_obj.wav',0
+0007D826= 61 73 73 65 74 73 ...   1834  bounceAudio             dc.b    'assets/audio/bounce.wav',0
+0007D83E                          1835  
+0007D83E= 61 73 73 65 74 73 ...   1836  playerWalkingAudio      dc.b    'assets/audio/walking.wav',0
+0007D857                          1837  
+0007D857= 61 73 73 65 74 73 ...   1838  pointAudio              dc.b    'assets/audio/point.wav',0
+0007D86E= 61 73 73 65 74 73 ...   1839  oneUpAudio              dc.b    'assets/audio/gain_life.wav',0
+0007D889= 61 73 73 65 74 73 ...   1840  loseLifeAudio           dc.b    'assets/audio/drop_obj.wav',0
+0007D8A3                          1841  
+0007D8A3= 61 73 73 65 74 73 ...   1842  loseGameAudio           dc.b    'assets/audio/lose_game.wav',0
+0007D8BE                          1843  
+0007D8BE                          1844  
+0007D8BE                          1845  ; =======================================================================================
+0007D8BE                          1846  
+0007D8BE                          1847  
+0007D8BE                          1848  
+0007D8BE                          1849  
+0007D8BE                          1850  
+0007D8BE                          1851  
+0007D8BE                          1852  
+0007D8BE                          1853  
+0007D8BE                          1854  
+0007D8BE                          1855  
+0007D8BE                          1856  
+0007D8BE                          1857  
+0007D8BE                          1858  
+0007D8BE                          1859  
+0007D8BE                          1860  
+0007D8BE                          1861  
+0007D8BE                          1862  
+0007D8BE                          1863  
+0007D8BE                          1864  
+0007D8BE                          1865  
+0007D8BE                          1866  
+0007D8BE                          1867  
+0007D8BE                          1868  
+0007D8BE                          1869  
+0007D8BE                          1870  -------------------- end include --------------------
+0007D8BE                          1871  
+0007D8BE                          1872          END    START
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+AFTERDRAWCURRENTGAMEOBJ  18E0
+AFTERDRAWLOOP       19F0
+AFTERGAMELOOP       1054
+ATTEMPTSPAWNGAMEOBJ  145E
+BACKGROUNDIMG       1A76
+BACKGROUNDIMGHEADER  7D5F0
+BEFOREINITGAME      101A
+BG_DIMENSIONS       28001E0
+BMP_HEADER_END      A
+BMP_HEADER_SIZE     E
+BOUNCEAUDIO         7D826
+BOUND_B             1BC00
+BOUND_L             2800
+BOUND_R             24300
+BYTESWAP            10EA
+CHUNK_FRAME         20
+CHUNK_H             1E
+CHUNK_W             1C
+CLEARSCREEN         19F2
+COLOR_TABLE         8
+CONFIRMRETRY        1712
+CREATEOBJ           1494
+CURRENTANIMFRAME    7D79C
+CURRENTGAMEOBJ      7D786
+CURR_SCREEN_X       4
+CURR_SCREEN_Y       8
+DECREMENTLIVES      1166
+DELTATIME           7D66E
+DENYRETRY           1728
+DESTROYGAMEOBJ      14EE
+DIALOG_CHUNK_H      F0
+DIALOG_CHUNK_W      140
+DIALOG_START_X      A000
+DIALOG_START_Y      7800
+DIDLOSEFLAG         7D7A0
+DIDQUITFLAG         7D7A2
+DIGITSEGMENTMASKS   1A34
+DIGITSTARTPOSITIONS  1A2C
+DISPENSEOBJAUDIO    7D80B
+DOUBLE_BUFFER_MODE  11
+DRAWBACKGROUNDCHUNK  18E6
+DRAWCHUNK           1976
+DRAWDIGIT           1248
+DRAWGAMEOBJCHUNK    192A
+DRAWLOOP            19B2
+DRAWSEGMENT         1284
+DRAW_CHUNK_H        A
+DRAW_CHUNK_STACK_SIZE  10
+DRAW_CHUNK_W        8
+DRAW_CHUNK_X        C
+DRAW_CHUNK_Y        E
+DRAW_DIGIT_DIGIT    6
+DRAW_DIGIT_ORIGIN   8
+DRAW_FILLED_RECT    57
+DRAW_HEADER_DATA    10
+DRAW_LINE           54
+DRAW_PIXEL          52
+DRAW_SCREEN_X       4
+DRAW_SCREEN_Y       6
+DRAW_SEG_COUNTER    8
+DRAW_SEG_OFFSET_CHUNK  2C
+DRAW_SEG_OFFSET_DIG_X  18
+DRAW_SEG_OFFSET_DIG_Y  1A
+DRAW_SEG_POSITIONS  C
+ENDHANDLEBEGINCONFIRMATION  17D2
+ENDHANDLERETRYCONFIRMATION  1732
+ENDINITGAMEOBJ      14EC
+ENDSETNEXTCURRENTGAMEOBJ  145A
+ENDUPDATECURRENTGAMEOBJ  143E
+ENDUPDATEPLAYER     136A
+FINDFIRSTNONNULLARRAYELEMENT  1480
+FRACTIONAL_BIT_COUNT  8
+FRAMESUNTILANIMCHANGE  7D79A
+FRAMESUNTILOBJSPAWN  7D796
+FRAMESUNTILWALKINGAUDIO  7D798
+FRAMES_UNTIL_ANIM   5
+FRAMES_UNTIL_OBJ_SPAWN  10E
+FRAME_DURATION      2
+FROM_HEADER_TO_H    8
+FROM_HEADER_TO_W    4
+FULLSCREEN_MODE     2
+GAMELOOP            1020
+GAMEOBJARRAY        7D720
+GAMEOBJCHECKPLAYERCOLLISION  13D2
+GAMEOBJCHECKRIGHTBOUND  13A8
+GAME_OBJ_SIZE_W     11
+GETRANDOMNUMBER     10B2
+GETRANDOMNUMBER_1   10BC
+GETRANDOMNUMBER_2   10C6
+GETRANDOMSPEED      10D2
+GET_TIME            8
+GET_USER_INPUT      13
+GIVEANIMFRAMETOOBJSLOOP  1126
+GRAVITY             50
+HALT_SIM            9
+HANDLEBEGINCONFIRMATION  1768
+HANDLEBEGINLOOP     1796
+HANDLELOSE          1142
+HANDLEPLAYERWALKINGAUDIO  1508
+HANDLERETRYCONFIRMATION  16F6
+HANDLERETRYLOOP     16F6
+HANDLESEGMENTSLOOP  1262
+HEADER_SIZE_W       9
+IMG_H               E
+IMG_HEADER_DATA     0
+IMG_START           0
+IMG_W               C
+INCREMENTLIVES      119E
+INCREMENTSCORE      11CE
+INITBACKGROUND      15D2
+INITGAME            1526
+INITGAMEOBJ         1478
+INITGAMEOBJSARRAY   15B0
+INITGAMEPLAYVARIABLES  155E
+INITLEDCHUNKS       1646
+INITPLAYER          1694
+INITRETRYDIALOG     1612
+INITSTARTDIALOG     1734
+INITTIME            16EA
+KEY_ARROW_L         25
+KEY_ARROW_R         27
+KEY_N               4E
+KEY_Q               51
+KEY_SPACE           20
+KEY_Y               59
+LEFTDETECTED        130E
+LIVES               7D78E
+LIVESCHUNKREGION    7D698
+LIVES_CHUNK_H       3C
+LIVES_CHUNK_W       46
+LIVES_START_X       23A00
+LIVES_START_Y       0
+LOADAUDIO           7D7BA
+LOADIMAGES          17D4
+LOSEGAMEAUDIO       7D8A3
+LOSELIFEAUDIO       7D889
+MENUCANCELAUDIO     7D7EE
+MENUCONFIRMAUDIO    7D7D0
+NOCOLLISIONDETECTED  1420
+NUM_DIGITS          2
+NUM_FRAMES_IN_ANIM  5
+NUM_GAME_OBJS_IN_ARRAY  3
+OBJECT_BLOCK        14
+OBJIMG              54BCE
+OBJIMGHEADER        7D638
+OBJ_CHUNK_H         28
+OBJ_CHUNK_W         28
+OBJ_START_SPEED_Y   0
+OBJ_START_X         2000
+OBJ_START_Y         8000
+ONEUPAUDIO          7D86E
+PADDING             10
+PARSEIMAGE          1854
+PIXEL_ARRAY         4
+PLAYER              7D6FE
+PLAYERHEADERIDLE    7D602
+PLAYERHEADERLEFT    7D614
+PLAYERHEADERRIGHT   7D626
+PLAYERIMGIDLE       4CEAC
+PLAYERIMGLEFT       4F862
+PLAYERIMGRIGHT      52218
+PLAYERWALKINGAUDIO  7D83E
+PLAYER_CHUNK_H      28
+PLAYER_CHUNK_W      28
+PLAYER_SPEED        700
+PLAYER_START_X      14000
+PLAYER_START_Y      19400
+PLAYWALKINGAUDIO    1364
+PLAY_AUDIO          49
+POINTAUDIO          7D857
+POINTSUNTILONEUP    7D79E
+POINTS_UNTIL_ONE_UP  A
+PREVFRAMESTARTTIME  7D672
+PREV_SCREEN_X       C
+PREV_SCREEN_Y       10
+QUITGAME            1066
+RANDOMNUMBER        7D792
+REFRESHSCREEN       18AC
+REPAINT_SCREEN      5E
+RETRYDIALOG         7D6BA
+RETRYIMG            57584
+RETRYIMGHEADER      7D64A
+RIGHTDETECTED       1338
+SCORE               7D78A
+SCORECHUNKREGION    7D676
+SCORE_CHUNK_H       3C
+SCORE_CHUNK_W       46
+SCORE_START_X       0
+SCORE_START_Y       0
+SEEDRNG             10A4
+SEGMENTPOSITIONS    1A3E
+SEG_POS_END_X       4
+SEG_POS_END_Y       6
+SEG_POS_START_X     0
+SEG_POS_START_Y     2
+SETFULLSCREEN       1A20
+SETNEXTCURRENTGAMEOBJ  1440
+SETQUITFLAG         17B2
+SET_DRAW_MODE       5C
+SET_FILL_COLOR      51
+SET_PEN_COLOR       50
+SET_WINDOW_MODE     21
+SINGLE_BUFFER_MODE  10
+SKIPANIMFRAMECHANGE  1140
+SKIPATTEMPTSPAWN    1476
+SKIPDRAWCURRENTPIXEL  19D0
+SKIPDRAWSEGMENT     127A
+SKIPGIVEANIMFRAMETOTHISOBJ  1130
+SKIPONEUP           1212
+SKIPRESETANIMFRAMENUMBER  1114
+SKIPSETLOSE         118C
+SKIPWAIT            10A2
+SKIPWALKINGAUDIO    1524
+SPEED_X             14
+SPEED_Y             18
+START               1000
+STARTAUDIO          7D7A3
+STARTDIALOG         7D6DC
+STARTGAME           17C8
+STARTIMG            6A5BA
+STARTIMGHEADER      7D65C
+STARTING_LIVES      3
+STEPTHROUGHGAMEOBJARRAY_INIT  15C0
+UPDATEANIMATIONFRAMENUMBER  10F2
+UPDATECURRENTGAMEOBJ  136C
+UPDATEDELTATIME     1074
+UPDATEOBJSCREENPOSITION  1428
+UPDATEPLAYEROBJ     12DA
+UPDATESEGMENTLED    1214
+UPDATESEGMENTLEDLOOP  1220
+UPDATE_LED_VALUE    4
+WAIT                17
+WALK_AUDIO_FRAME_DELAY  A
+WILLRETRYFLAG       7D7A1
